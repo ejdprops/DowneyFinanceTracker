@@ -1,14 +1,18 @@
 import { useState, useRef } from 'react';
 import { parseUSAACSV } from '../utils/csvParser';
-import type { ParsedCSVData } from '../types';
+import type { ParsedCSVData, Account } from '../types';
 
 interface CSVImportProps {
-  onImportComplete: (data: ParsedCSVData) => void;
+  accounts: Account[];
+  onImportComplete: (data: ParsedCSVData, accountId?: string) => void;
 }
 
-export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
+export const CSVImport: React.FC<CSVImportProps> = ({ accounts, onImportComplete }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [showAccountSelect, setShowAccountSelect] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -17,16 +21,37 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
       return;
     }
 
+    // If there are accounts, show account selection first
+    if (accounts.length > 0) {
+      setPendingFile(file);
+      setShowAccountSelect(true);
+      return;
+    }
+
+    // No accounts, proceed without linking
+    await processFile(file);
+  };
+
+  const processFile = async (file: File, accountId?: string) => {
     setIsProcessing(true);
+    setShowAccountSelect(false);
 
     try {
       const data = await parseUSAACSV(file);
-      onImportComplete(data);
+      onImportComplete(data, accountId);
     } catch (error) {
       console.error('Error parsing CSV:', error);
       alert('Failed to parse CSV file. Please check the format.');
     } finally {
       setIsProcessing(false);
+      setPendingFile(null);
+      setSelectedAccountId('');
+    }
+  };
+
+  const handleAccountSubmit = () => {
+    if (pendingFile) {
+      processFile(pendingFile, selectedAccountId || undefined);
     }
   };
 
@@ -64,6 +89,48 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
 
   return (
     <div className="w-full max-w-2xl mx-auto p-6">
+      {/* Account Selection Modal */}
+      {showAccountSelect && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3">
+            Link to Account
+          </h3>
+          <p className="text-sm text-blue-700 mb-4">
+            Select which account these transactions belong to:
+          </p>
+          <select
+            value={selectedAccountId}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
+            className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+          >
+            <option value="">No account (import without linking)</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name} ({account.type})
+                {account.institution && ` - ${account.institution}`}
+              </option>
+            ))}
+          </select>
+          <div className="flex gap-2">
+            <button
+              onClick={handleAccountSubmit}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Import
+            </button>
+            <button
+              onClick={() => {
+                setShowAccountSelect(false);
+                setPendingFile(null);
+              }}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       <div
         className={`
           border-2 border-dashed rounded-lg p-12 text-center cursor-pointer

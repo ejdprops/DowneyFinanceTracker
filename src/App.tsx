@@ -49,10 +49,18 @@ function App() {
     }
   }, [accounts]);
 
-  const handleImportComplete = (data: ParsedCSVData) => {
+  const handleImportComplete = (data: ParsedCSVData, accountId?: string) => {
     // Merge new transactions with existing ones (avoid duplicates)
     const existingIds = new Set(transactions.map(t => t.id));
-    const newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
+    let newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
+
+    // Link transactions to account if specified
+    if (accountId) {
+      newTransactions = newTransactions.map(t => ({
+        ...t,
+        account: accountId,
+      }));
+    }
 
     setTransactions([...transactions, ...newTransactions]);
     setErrors(data.errors);
@@ -175,7 +183,7 @@ function App() {
           <>
             {transactions.length === 0 ? (
               <div className="space-y-8">
-                <CSVImport onImportComplete={handleImportComplete} />
+                <CSVImport accounts={accounts} onImportComplete={handleImportComplete} />
 
             {errors.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -225,6 +233,9 @@ function App() {
                         Description
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Account
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Category
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -243,6 +254,11 @@ function App() {
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           {transaction.description}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {transaction.account
+                            ? accounts.find((a) => a.id === transaction.account)?.name || '-'
+                            : '-'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {transaction.category || '-'}
