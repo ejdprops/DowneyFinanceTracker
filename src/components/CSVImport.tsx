@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { parseUSAACSV } from '../utils/csvParser';
-import { ParsedCSVData } from '../types';
+import type { ParsedCSVData } from '../types';
 
 interface CSVImportProps {
   onImportComplete: (data: ParsedCSVData) => void;

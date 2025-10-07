@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { Transaction, ParsedCSVData } from '../types';
+import type { Transaction, ParsedCSVData } from '../types';
 
 /**
  * Parse USAA CSV file and convert to Transaction objects
