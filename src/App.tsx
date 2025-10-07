@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { CSVImport } from './components/CSVImport';
 import { AccountManager } from './components/AccountManager';
 import type { ParsedCSVData, Transaction, Account } from './types';
@@ -11,6 +11,7 @@ import {
   uploadDataFromFile,
   getLastSync
 } from './utils/storage';
+import { calculateProjectedBalances } from './utils/balanceCalculations';
 
 function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -18,6 +19,11 @@ function App() {
   const [errors, setErrors] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<Date | undefined>();
   const [currentView, setCurrentView] = useState<'transactions' | 'accounts'>('transactions');
+
+  // Calculate projected balances whenever transactions or accounts change
+  const transactionsWithBalances = useMemo(() => {
+    return calculateProjectedBalances(transactions, accounts);
+  }, [transactions, accounts]);
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -104,6 +110,16 @@ function App() {
     setAccounts(accounts.filter((a) => a.id !== id));
   };
 
+  const handleClearAllData = () => {
+    if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
+      setTransactions([]);
+      setAccounts([]);
+      setErrors([]);
+      localStorage.clear();
+      alert('All data has been cleared.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
@@ -136,6 +152,12 @@ function App() {
                   className="hidden"
                 />
               </label>
+              <button
+                onClick={handleClearAllData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                Clear All Data
+              </button>
             </div>
           </div>
         </div>
@@ -244,10 +266,15 @@ function App() {
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Balance
                       </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Projected Balance
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {transactions.map((transaction) => (
+                    {transactionsWithBalances
+                      .sort((a, b) => b.date.getTime() - a.date.getTime())
+                      .map((transaction) => (
                       <tr key={transaction.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {transaction.date.toLocaleDateString()}
@@ -274,6 +301,21 @@ function App() {
                           {transaction.balance !== undefined
                             ? `$${transaction.balance.toFixed(2)}`
                             : '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
+                          {transaction.projectedBalance !== undefined ? (
+                            <span
+                              className={
+                                transaction.projectedBalance >= 0
+                                  ? 'text-green-600'
+                                  : 'text-red-600'
+                              }
+                            >
+                              ${transaction.projectedBalance.toFixed(2)}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                       </tr>
                     ))}

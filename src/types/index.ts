@@ -4,6 +4,7 @@ export interface Transaction {
   description: string;
   amount: number;
   balance?: number;
+  projectedBalance?: number;
   category?: string;
   account?: string;
 }
