@@ -249,7 +249,7 @@ function App() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
+                        Due Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Description
@@ -263,8 +263,8 @@ function App() {
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Amount
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Balance
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Paid
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Projected Balance
@@ -277,10 +277,17 @@ function App() {
                       .map((transaction) => (
                       <tr key={transaction.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transaction.date.toLocaleDateString()}
+                          {transaction.dueDate
+                            ? transaction.dueDate.toLocaleDateString()
+                            : transaction.date.toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-900">
                           {transaction.description}
+                          {transaction.notes && (
+                            <span className="block text-xs text-gray-500 mt-1">
+                              {transaction.notes}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {transaction.account
@@ -297,10 +304,20 @@ function App() {
                         >
                           ${Math.abs(transaction.amount).toFixed(2)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                          {transaction.balance !== undefined
-                            ? `$${transaction.balance.toFixed(2)}`
-                            : '-'}
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <input
+                            type="checkbox"
+                            checked={transaction.isPaid || false}
+                            onChange={(e) => {
+                              const updated = transactions.map((t) =>
+                                t.id === transaction.id
+                                  ? { ...t, isPaid: e.target.checked, actualPaymentDate: e.target.checked ? new Date() : undefined }
+                                  : t
+                              );
+                              setTransactions(updated);
+                            }}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                          />
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
                           {transaction.projectedBalance !== undefined ? (

@@ -7,6 +7,10 @@ export interface Transaction {
   projectedBalance?: number;
   category?: string;
   account?: string;
+  dueDate?: Date;
+  isPaid?: boolean;
+  actualPaymentDate?: Date;
+  notes?: string;
 }
 
 export interface Account {
