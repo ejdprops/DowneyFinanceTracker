@@ -12,6 +12,7 @@ import {
   getLastSync
 } from './utils/storage';
 import { calculateProjectedBalances } from './utils/balanceCalculations';
+import { getCategoryColor } from './utils/categoryColors';
 
 function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -294,8 +295,14 @@ function App() {
                             ? accounts.find((a) => a.id === transaction.account)?.name || '-'
                             : '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {transaction.category || '-'}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {transaction.category ? (
+                            <span className={`px-3 py-1 rounded font-medium ${getCategoryColor(transaction.category)}`}>
+                              {transaction.category}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td
                           className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
