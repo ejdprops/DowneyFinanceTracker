@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { CSVImport } from './components/CSVImport';
-import type { ParsedCSVData, Transaction } from './types';
+import { AccountManager } from './components/AccountManager';
+import type { ParsedCSVData, Transaction, Account } from './types';
 import {
   loadTransactions,
   saveTransactions,
+  loadAccounts,
+  saveAccounts,
   downloadDataAsFile,
   uploadDataFromFile,
   getLastSync
@@ -11,14 +14,21 @@ import {
 
 function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [lastSync, setLastSync] = useState<Date | undefined>();
+  const [currentView, setCurrentView] = useState<'transactions' | 'accounts'>('transactions');
 
-  // Load transactions from localStorage on mount
+  // Load data from localStorage on mount
   useEffect(() => {
     const savedTransactions = loadTransactions();
+    const savedAccounts = loadAccounts();
+
     if (savedTransactions.length > 0) {
       setTransactions(savedTransactions);
+    }
+    if (savedAccounts.length > 0) {
+      setAccounts(savedAccounts);
     }
     setLastSync(getLastSync());
   }, []);
@@ -30,6 +40,14 @@ function App() {
       setLastSync(new Date());
     }
   }, [transactions]);
+
+  // Save accounts whenever they change
+  useEffect(() => {
+    if (accounts.length > 0) {
+      saveAccounts(accounts);
+      setLastSync(new Date());
+    }
+  }, [accounts]);
 
   const handleImportComplete = (data: ParsedCSVData) => {
     // Merge new transactions with existing ones (avoid duplicates)
@@ -55,10 +73,27 @@ function App() {
     try {
       const data = await uploadDataFromFile(file);
       setTransactions(data.transactions);
-      alert(`Successfully imported ${data.transactions.length} transactions!`);
+      setAccounts(data.accounts);
+      alert(`Successfully imported ${data.transactions.length} transactions and ${data.accounts.length} accounts!`);
     } catch (error) {
       alert(`Failed to import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  };
+
+  const handleAddAccount = (accountData: Omit<Account, 'id'>) => {
+    const newAccount: Account = {
+      ...accountData,
+      id: `account-${Date.now()}`,
+    };
+    setAccounts([...accounts, newAccount]);
+  };
+
+  const handleEditAccount = (account: Account) => {
+    setAccounts(accounts.map((a) => (a.id === account.id ? account : a)));
+  };
+
+  const handleDeleteAccount = (id: string) => {
+    setAccounts(accounts.filter((a) => a.id !== id));
   };
 
   return (
@@ -77,33 +112,70 @@ function App() {
                 </p>
               )}
             </div>
-            {transactions.length > 0 && (
-              <div className="flex gap-2">
-                <button
-                  onClick={handleExportData}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                >
-                  Export Data
-                </button>
-                <label className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer text-sm">
-                  Import Data
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportData}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            )}
+            <div className="flex gap-2">
+              <button
+                onClick={handleExportData}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+              >
+                Export Data
+              </button>
+              <label className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer text-sm">
+                Import Data
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportData}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {transactions.length === 0 ? (
-          <div className="space-y-8">
-            <CSVImport onImportComplete={handleImportComplete} />
+        {/* Navigation Tabs */}
+        <div className="mb-6 border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setCurrentView('transactions')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                currentView === 'transactions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Transactions ({transactions.length})
+            </button>
+            <button
+              onClick={() => setCurrentView('accounts')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                currentView === 'accounts'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Accounts ({accounts.length})
+            </button>
+          </nav>
+        </div>
+
+        {/* Accounts View */}
+        {currentView === 'accounts' && (
+          <AccountManager
+            accounts={accounts}
+            onAddAccount={handleAddAccount}
+            onEditAccount={handleEditAccount}
+            onDeleteAccount={handleDeleteAccount}
+          />
+        )}
+
+        {/* Transactions View */}
+        {currentView === 'transactions' && (
+          <>
+            {transactions.length === 0 ? (
+              <div className="space-y-8">
+                <CSVImport onImportComplete={handleImportComplete} />
 
             {errors.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -194,6 +266,8 @@ function App() {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </main>
     </div>
