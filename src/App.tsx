@@ -1,13 +1,42 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CSVImport } from './components/CSVImport';
 import type { ParsedCSVData, Transaction } from './types';
+import {
+  loadTransactions,
+  saveTransactions,
+  downloadDataAsFile,
+  uploadDataFromFile,
+  getLastSync
+} from './utils/storage';
 
 function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [lastSync, setLastSync] = useState<Date | undefined>();
+
+  // Load transactions from localStorage on mount
+  useEffect(() => {
+    const savedTransactions = loadTransactions();
+    if (savedTransactions.length > 0) {
+      setTransactions(savedTransactions);
+    }
+    setLastSync(getLastSync());
+  }, []);
+
+  // Save transactions whenever they change
+  useEffect(() => {
+    if (transactions.length > 0) {
+      saveTransactions(transactions);
+      setLastSync(new Date());
+    }
+  }, [transactions]);
 
   const handleImportComplete = (data: ParsedCSVData) => {
-    setTransactions(data.transactions);
+    // Merge new transactions with existing ones (avoid duplicates)
+    const existingIds = new Set(transactions.map(t => t.id));
+    const newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
+
+    setTransactions([...transactions, ...newTransactions]);
     setErrors(data.errors);
 
     if (data.errors.length > 0) {
@@ -15,14 +44,59 @@ function App() {
     }
   };
 
+  const handleExportData = () => {
+    downloadDataAsFile(`downey-finance-${new Date().toISOString().split('T')[0]}.json`);
+  };
+
+  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const data = await uploadDataFromFile(file);
+      setTransactions(data.transactions);
+      alert(`Successfully imported ${data.transactions.length} transactions!`);
+    } catch (error) {
+      alert(`Failed to import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <h1 className="text-3xl font-bold text-gray-900">Downey Finance Tracker</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Personal budget management and financial tracking
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Downey Finance Tracker</h1>
+              <p className="mt-2 text-sm text-gray-600">
+                Personal budget management and financial tracking
+              </p>
+              {lastSync && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Last saved: {lastSync.toLocaleString()}
+                </p>
+              )}
+            </div>
+            {transactions.length > 0 && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportData}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                >
+                  Export Data
+                </button>
+                <label className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer text-sm">
+                  Import Data
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
