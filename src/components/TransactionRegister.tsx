@@ -45,6 +45,8 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     onUpdateTransaction({
       ...transaction,
       isReconciled: !transaction.isReconciled,
+      // When marking as reconciled, also mark as not pending
+      isPending: transaction.isReconciled ? transaction.isPending : false,
     });
   };
 
