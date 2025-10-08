@@ -50,6 +50,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     });
   };
 
+  const handleMarkAsProcessed = (transaction: Transaction) => {
+    // Remove "(Projected)" from description and mark as pending instead of projected
+    const newDescription = transaction.description.replace(' (Projected)', '');
+    onUpdateTransaction({
+      ...transaction,
+      description: newDescription,
+      isPending: true, // Mark as pending instead of projected
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -119,23 +129,28 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
                   <td className="px-4 py-3 text-center">
-                    {transaction.description.includes('(Projected)') ? (
-                      <div className="w-6 h-6 rounded flex items-center justify-center bg-gray-800 text-gray-600" title="Cannot reconcile projected transactions">
-                        —
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => handleToggleReconciled(transaction)}
-                        className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                          transaction.isReconciled
+                    <button
+                      onClick={() => handleToggleReconciled(transaction)}
+                      disabled={transaction.description.includes('(Projected)')}
+                      className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                        transaction.description.includes('(Projected)')
+                          ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
+                          : transaction.isReconciled
                             ? 'bg-green-500 text-white'
                             : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                        }`}
-                        title={transaction.isReconciled ? 'Reconciled' : 'Not reconciled'}
-                      >
-                        {transaction.isReconciled && '✓'}
-                      </button>
-                    )}
+                      }`}
+                      title={
+                        transaction.description.includes('(Projected)')
+                          ? 'Mark as processed first'
+                          : transaction.isReconciled
+                            ? 'Reconciled'
+                            : 'Not reconciled'
+                      }
+                    >
+                      {transaction.description.includes('(Projected)')
+                        ? '—'
+                        : transaction.isReconciled && '✓'}
+                    </button>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-white">
                     {transaction.date.toLocaleDateString()}
@@ -168,19 +183,30 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
                     <div className="flex gap-2 justify-center">
-                      <button
-                        onClick={() => setSelectedTransaction(transaction)}
-                        className="text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                      >
-                        Make Recurring
-                      </button>
-                      {transaction.isManual && (
+                      {transaction.description.includes('(Projected)') ? (
                         <button
-                          onClick={() => onDeleteTransaction(transaction.id)}
-                          className="text-red-400 hover:text-red-300 transition-colors font-medium"
+                          onClick={() => handleMarkAsProcessed(transaction)}
+                          className="text-green-400 hover:text-green-300 transition-colors font-medium"
                         >
-                          Delete
+                          Mark as Processed
                         </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setSelectedTransaction(transaction)}
+                            className="text-blue-400 hover:text-blue-300 transition-colors font-medium"
+                          >
+                            Make Recurring
+                          </button>
+                          {transaction.isManual && (
+                            <button
+                              onClick={() => onDeleteTransaction(transaction.id)}
+                              className="text-red-400 hover:text-red-300 transition-colors font-medium"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </td>
