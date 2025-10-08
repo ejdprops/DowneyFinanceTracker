@@ -29,7 +29,7 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
   debts,
   onDataLoaded,
 }) => {
-  const [iCloudDirHandle, setICloudDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  const [iCloudDirHandle, setICloudDirHandle] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const supportsFileSystem = isFileSystemAccessSupported();

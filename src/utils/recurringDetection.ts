@@ -128,7 +128,7 @@ const detectFrequency = (
  */
 const calculateConfidence = (
   transactions: Transaction[],
-  frequency: RecurringBill['frequency'],
+  _frequency: RecurringBill['frequency'],
   averageAmount: number
 ): number => {
   let confidence = 0;

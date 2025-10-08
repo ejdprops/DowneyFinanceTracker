@@ -40,7 +40,7 @@ const getNextOccurrence = (
   date: Date,
   frequency: RecurringBill['frequency'],
   dayOfMonth?: number,
-  dayOfWeek?: number
+  _dayOfWeek?: number
 ): Date => {
   const next = new Date(date);
 

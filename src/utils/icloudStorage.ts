@@ -66,9 +66,7 @@ export const selectICloudFolder = async (): Promise<FileSystemDirectoryHandle | 
   }
 
   try {
-    const dirHandle = await window.showDirectoryPicker!({
-      mode: 'readwrite',
-    } as any);
+    const dirHandle = await window.showDirectoryPicker!();
 
     // Store permission for future use (note: permissions may need re-request on reload)
     return dirHandle;
