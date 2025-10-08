@@ -119,17 +119,23 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => handleToggleReconciled(transaction)}
-                      className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                        transaction.isReconciled
-                          ? 'bg-green-500 text-white'
-                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                      }`}
-                      title={transaction.isReconciled ? 'Reconciled' : 'Not reconciled'}
-                    >
-                      {transaction.isReconciled && '✓'}
-                    </button>
+                    {transaction.description.includes('(Projected)') ? (
+                      <div className="w-6 h-6 rounded flex items-center justify-center bg-gray-800 text-gray-600" title="Cannot reconcile projected transactions">
+                        —
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleReconciled(transaction)}
+                        className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                          transaction.isReconciled
+                            ? 'bg-green-500 text-white'
+                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        }`}
+                        title={transaction.isReconciled ? 'Reconciled' : 'Not reconciled'}
+                      >
+                        {transaction.isReconciled && '✓'}
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-white">
                     {transaction.date.toLocaleDateString()}
