@@ -102,6 +102,10 @@ function App() {
     setTransactions(transactions.filter(t => t.id !== id));
   };
 
+  const handleUpdateTransaction = (transaction: Transaction) => {
+    setTransactions(transactions.map(t => t.id === transaction.id ? transaction : t));
+  };
+
   const handleAddBill = (bill: Omit<RecurringBill, 'id'>) => {
     const newBill: RecurringBill = {
       ...bill,
@@ -325,6 +329,7 @@ function App() {
                 onAddTransaction={handleAddTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
                 onCreateRecurringBill={handleAddBill}
+                onUpdateTransaction={handleUpdateTransaction}
               />
             )}
 

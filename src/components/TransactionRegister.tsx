@@ -6,6 +6,7 @@ interface TransactionRegisterProps {
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   onDeleteTransaction: (id: string) => void;
   onCreateRecurringBill: (bill: Omit<RecurringBill, 'id'>) => void;
+  onUpdateTransaction: (transaction: Transaction) => void;
 }
 
 export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
@@ -13,10 +14,12 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   onAddTransaction,
   onDeleteTransaction,
   onCreateRecurringBill,
+  onUpdateTransaction,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [showPending, setShowPending] = useState(true);
 
   // Sort transactions (newest first)
   // Use sortOrder if available (preserves CSV chronological order)
@@ -30,11 +33,20 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     return b.date.getTime() - a.date.getTime();
   });
 
-  // Filter transactions by search term
-  const filteredTransactions = sortedTransactions.filter(t =>
-    t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter transactions by search term and pending toggle
+  const filteredTransactions = sortedTransactions.filter(t => {
+    const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         t.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesPending = showPending || !t.isPending;
+    return matchesSearch && matchesPending;
+  });
+
+  const handleToggleReconciled = (transaction: Transaction) => {
+    onUpdateTransaction({
+      ...transaction,
+      isReconciled: !transaction.isReconciled,
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -48,15 +60,34 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <input
-          type="text"
-          placeholder="Search by Description or Category..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
+      {/* Search and Filters */}
+      <div className="flex gap-3">
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder="Search by Description or Category..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+
+        {/* Toggle Pending */}
+        <div className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border border-gray-700">
+          <span className="text-sm text-gray-300 whitespace-nowrap">Show Pending</span>
+          <button
+            onClick={() => setShowPending(!showPending)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              showPending ? 'bg-blue-500' : 'bg-gray-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                showPending ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Transactions Table */}
@@ -64,6 +95,9 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
         <table className="w-full">
           <thead className="bg-gray-900/50 border-b border-gray-700">
             <tr>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
+                <span title="Reconciled">✓</span>
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Date</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Description</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Category</th>
@@ -75,13 +109,26 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
           <tbody className="divide-y divide-gray-700">
             {filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
                   No transactions found. Import a CSV or add a manual transaction.
                 </td>
               </tr>
             ) : (
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => handleToggleReconciled(transaction)}
+                      className={`w-6 h-6 rounded flex items-center justify-center transition-colors ${
+                        transaction.isReconciled
+                          ? 'bg-green-500 text-white'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                      }`}
+                      title={transaction.isReconciled ? 'Reconciled' : 'Not reconciled'}
+                    >
+                      {transaction.isReconciled && '✓'}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-white">
                     {transaction.date.toLocaleDateString()}
                   </td>
