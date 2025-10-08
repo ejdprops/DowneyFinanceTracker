@@ -1,259 +1,83 @@
-import type { Transaction, Account, Budget, Debt } from '../types';
+import type { Transaction, Account, RecurringBill, Debt } from '../types';
 
 const STORAGE_KEYS = {
-  TRANSACTIONS: 'downey-finance-transactions',
-  ACCOUNTS: 'downey-finance-accounts',
-  BUDGETS: 'downey-finance-budgets',
-  DEBTS: 'downey-finance-debts',
-  LAST_SYNC: 'downey-finance-last-sync',
+  TRANSACTIONS: 'usaa_bills_transactions',
+  ACCOUNT: 'usaa_bills_account',
+  RECURRING_BILLS: 'usaa_bills_recurring',
+  DEBTS: 'usaa_bills_debts',
 };
 
-/**
- * Application data structure
- */
-export interface AppData {
-  transactions: Transaction[];
-  accounts: Account[];
-  budgets: Budget[];
-  debts: Debt[];
-  lastSync?: Date;
-}
-
-/**
- * Save transactions to localStorage
- */
-export const saveTransactions = (transactions: Transaction[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-    localStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
-  } catch (error) {
-    console.error('Failed to save transactions:', error);
-    throw new Error('Failed to save data. Your browser storage may be full.');
-  }
+// Transactions
+export const saveTransactions = (transactions: Transaction[]) => {
+  localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 };
 
-/**
- * Load transactions from localStorage
- */
 export const loadTransactions = (): Transaction[] => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-    if (!data) return [];
+  const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
+  if (!data) return [];
 
-    const transactions = JSON.parse(data);
+  const parsed = JSON.parse(data);
+  return parsed.map((t: any) => ({
+    ...t,
+    date: new Date(t.date),
+  }));
+};
 
-    // Convert date strings back to Date objects
-    return transactions.map((t: any) => ({
-      ...t,
-      date: new Date(t.date),
-    }));
-  } catch (error) {
-    console.error('Failed to load transactions:', error);
-    return [];
+// Account
+export const saveAccount = (account: Account | null) => {
+  if (account) {
+    localStorage.setItem(STORAGE_KEYS.ACCOUNT, JSON.stringify(account));
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.ACCOUNT);
   }
 };
 
-/**
- * Save accounts to localStorage
- */
-export const saveAccounts = (accounts: Account[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-  } catch (error) {
-    console.error('Failed to save accounts:', error);
-  }
+export const loadAccount = (): Account | null => {
+  const data = localStorage.getItem(STORAGE_KEYS.ACCOUNT);
+  return data ? JSON.parse(data) : null;
 };
 
-/**
- * Load accounts from localStorage
- */
-export const loadAccounts = (): Account[] => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Failed to load accounts:', error);
-    return [];
-  }
+// Recurring Bills
+export const saveRecurringBills = (bills: RecurringBill[]) => {
+  localStorage.setItem(STORAGE_KEYS.RECURRING_BILLS, JSON.stringify(bills));
 };
 
-/**
- * Save budgets to localStorage
- */
-export const saveBudgets = (budgets: Budget[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(budgets));
-  } catch (error) {
-    console.error('Failed to save budgets:', error);
-  }
+export const loadRecurringBills = (): RecurringBill[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.RECURRING_BILLS);
+  if (!data) return [];
+
+  const parsed = JSON.parse(data);
+  return parsed.map((b: any) => ({
+    ...b,
+    nextDueDate: new Date(b.nextDueDate),
+  }));
 };
 
-/**
- * Load budgets from localStorage
- */
-export const loadBudgets = (): Budget[] => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.BUDGETS);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Failed to load budgets:', error);
-    return [];
-  }
+// Debts
+export const saveDebts = (debts: Debt[]) => {
+  localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
 };
 
-/**
- * Save debts to localStorage
- */
-export const saveDebts = (debts: Debt[]): void => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
-  } catch (error) {
-    console.error('Failed to save debts:', error);
-  }
-};
-
-/**
- * Load debts from localStorage
- */
 export const loadDebts = (): Debt[] => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.DEBTS);
-    if (!data) return [];
+  const data = localStorage.getItem(STORAGE_KEYS.DEBTS);
+  if (!data) return [];
 
-    const debts = JSON.parse(data);
-
-    // Convert date strings back to Date objects
-    return debts.map((d: any) => ({
-      ...d,
-      targetPayoffDate: d.targetPayoffDate ? new Date(d.targetPayoffDate) : undefined,
-    }));
-  } catch (error) {
-    console.error('Failed to load debts:', error);
-    return [];
-  }
+  return JSON.parse(data);
 };
 
-/**
- * Save all app data
- */
-export const saveAllData = (data: AppData): void => {
-  saveTransactions(data.transactions);
-  saveAccounts(data.accounts);
-  saveBudgets(data.budgets);
-  saveDebts(data.debts);
-};
-
-/**
- * Load all app data
- */
-export const loadAllData = (): AppData => {
+// Initialize with default account if none exists
+export const initializeAccount = (): Account => {
   return {
-    transactions: loadTransactions(),
-    accounts: loadAccounts(),
-    budgets: loadBudgets(),
-    debts: loadDebts(),
-    lastSync: getLastSync(),
+    id: 'bills-account',
+    name: 'USAA Bills',
+    accountNumber: '0165700823',
+    routingNumber: '314074269',
+    availableBalance: 2969.86,
+    institution: 'USAA',
   };
 };
 
-/**
- * Get last sync timestamp
- */
-export const getLastSync = (): Date | undefined => {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
-    return data ? new Date(data) : undefined;
-  } catch (error) {
-    return undefined;
-  }
-};
-
-/**
- * Clear all app data
- */
-export const clearAllData = (): void => {
-  Object.values(STORAGE_KEYS).forEach(key => {
-    localStorage.removeItem(key);
-  });
-};
-
-/**
- * Export all data as JSON string
- */
-export const exportDataToJSON = (): string => {
-  const data = loadAllData();
-  return JSON.stringify(data, null, 2);
-};
-
-/**
- * Import data from JSON string
- */
-export const importDataFromJSON = (jsonString: string): AppData => {
-  try {
-    const data = JSON.parse(jsonString);
-
-    // Validate and convert dates
-    const appData: AppData = {
-      transactions: data.transactions?.map((t: any) => ({
-        ...t,
-        date: new Date(t.date),
-      })) || [],
-      accounts: data.accounts || [],
-      budgets: data.budgets || [],
-      debts: data.debts?.map((d: any) => ({
-        ...d,
-        targetPayoffDate: d.targetPayoffDate ? new Date(d.targetPayoffDate) : undefined,
-      })) || [],
-    };
-
-    return appData;
-  } catch (error) {
-    console.error('Failed to import data:', error);
-    throw new Error('Invalid JSON format. Please check your file.');
-  }
-};
-
-/**
- * Download data as JSON file
- */
-export const downloadDataAsFile = (filename: string = 'downey-finance-data.json'): void => {
-  const data = exportDataToJSON();
-  const blob = new Blob([data], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.download = filename;
-  link.style.visibility = 'hidden';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
-};
-
-/**
- * Upload and import data from file
- */
-export const uploadDataFromFile = (file: File): Promise<AppData> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      try {
-        const jsonString = e.target?.result as string;
-        const data = importDataFromJSON(jsonString);
-        resolve(data);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    reader.onerror = () => {
-      reject(new Error('Failed to read file'));
-    };
-
-    reader.readAsText(file);
-  });
+// Clear all data
+export const clearAllData = () => {
+  Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
 };

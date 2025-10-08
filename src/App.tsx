@@ -1,357 +1,381 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { CSVImport } from './components/CSVImport';
-import { AccountManager } from './components/AccountManager';
-import type { ParsedCSVData, Transaction, Account } from './types';
+import { TransactionRegister } from './components/TransactionRegister';
+import { RecurringBillsManager } from './components/RecurringBillsManager';
+import { RecurringSuggestions } from './components/RecurringSuggestions';
+import { Projections } from './components/Projections';
+import { DebtsTracker } from './components/DebtsTracker';
+import { ICloudSync } from './components/ICloudSync';
+import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
-  loadTransactions,
   saveTransactions,
-  loadAccounts,
-  saveAccounts,
-  downloadDataAsFile,
-  uploadDataFromFile,
-  getLastSync
+  loadTransactions,
+  saveAccount,
+  loadAccount,
+  saveRecurringBills,
+  loadRecurringBills,
+  saveDebts,
+  loadDebts,
+  initializeAccount,
 } from './utils/storage';
-import { calculateProjectedBalances } from './utils/balanceCalculations';
-import { getCategoryColor } from './utils/categoryColors';
+import { generateProjections, calculateBalances } from './utils/projections';
 
 function App() {
+  const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'debts' | 'sync'>('account');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [lastSync, setLastSync] = useState<Date | undefined>();
-  const [currentView, setCurrentView] = useState<'transactions' | 'accounts'>('transactions');
+  const [account, setAccount] = useState<Account | null>(null);
+  const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [showProjections, setShowProjections] = useState(true);
 
-  // Calculate projected balances whenever transactions or accounts change
-  const transactionsWithBalances = useMemo(() => {
-    return calculateProjectedBalances(transactions, accounts);
-  }, [transactions, accounts]);
-
-  // Load data from localStorage on mount
+  // Load data on mount
   useEffect(() => {
-    const savedTransactions = loadTransactions();
-    const savedAccounts = loadAccounts();
+    const loadedTransactions = loadTransactions();
+    let loadedAccount = loadAccount();
+    const loadedBills = loadRecurringBills();
+    const loadedDebts = loadDebts();
 
-    if (savedTransactions.length > 0) {
-      setTransactions(savedTransactions);
+    // Initialize account if it doesn't exist
+    if (!loadedAccount) {
+      loadedAccount = initializeAccount();
+      saveAccount(loadedAccount);
     }
-    if (savedAccounts.length > 0) {
-      setAccounts(savedAccounts);
-    }
-    setLastSync(getLastSync());
+
+    setTransactions(loadedTransactions);
+    setAccount(loadedAccount);
+    setRecurringBills(loadedBills);
+    setDebts(loadedDebts);
   }, []);
 
-  // Save transactions whenever they change
+  // Save data when it changes
   useEffect(() => {
     if (transactions.length > 0) {
       saveTransactions(transactions);
-      setLastSync(new Date());
     }
   }, [transactions]);
 
-  // Save accounts whenever they change
   useEffect(() => {
-    if (accounts.length > 0) {
-      saveAccounts(accounts);
-      setLastSync(new Date());
+    if (account) {
+      saveAccount(account);
     }
-  }, [accounts]);
+  }, [account]);
 
-  const handleImportComplete = (data: ParsedCSVData, accountId?: string) => {
-    // Merge new transactions with existing ones (avoid duplicates)
+  useEffect(() => {
+    if (recurringBills.length > 0) {
+      saveRecurringBills(recurringBills);
+    }
+  }, [recurringBills]);
+
+  useEffect(() => {
+    if (debts.length > 0) {
+      saveDebts(debts);
+    }
+  }, [debts]);
+
+  const handleImportComplete = (data: ParsedCSVData) => {
     const existingIds = new Set(transactions.map(t => t.id));
-    let newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
-
-    // Link transactions to account if specified
-    if (accountId) {
-      newTransactions = newTransactions.map(t => ({
-        ...t,
-        account: accountId,
-      }));
-    }
+    const newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
 
     setTransactions([...transactions, ...newTransactions]);
-    setErrors(data.errors);
 
     if (data.errors.length > 0) {
-      console.warn('Import completed with errors:', data.errors);
+      alert(`Import completed with ${data.errors.length} errors. Check console for details.`);
+      console.error('Import errors:', data.errors);
+    } else {
+      alert(`Successfully imported ${newTransactions.length} transactions`);
     }
+
+    // Note: We do NOT update the account balance from imported transactions
+    // The account.availableBalance represents the CURRENT balance
+    // Imported transactions have historical balances that may be old
   };
 
-  const handleExportData = () => {
-    downloadDataAsFile(`downey-finance-${new Date().toISOString().split('T')[0]}.json`);
-  };
-
-  const handleImportData = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      const data = await uploadDataFromFile(file);
-      setTransactions(data.transactions);
-      setAccounts(data.accounts);
-      alert(`Successfully imported ${data.transactions.length} transactions and ${data.accounts.length} accounts!`);
-    } catch (error) {
-      alert(`Failed to import data: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  const handleAddAccount = (accountData: Omit<Account, 'id'>) => {
-    const newAccount: Account = {
-      ...accountData,
-      id: `account-${Date.now()}`,
+  const handleAddTransaction = (transaction: Omit<Transaction, 'id'>) => {
+    const newTransaction: Transaction = {
+      ...transaction,
+      id: `manual-${Date.now()}`,
     };
-    setAccounts([...accounts, newAccount]);
+    setTransactions([...transactions, newTransaction]);
   };
 
-  const handleEditAccount = (account: Account) => {
-    setAccounts(accounts.map((a) => (a.id === account.id ? account : a)));
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions(transactions.filter(t => t.id !== id));
   };
 
-  const handleDeleteAccount = (id: string) => {
-    setAccounts(accounts.filter((a) => a.id !== id));
+  const handleAddBill = (bill: Omit<RecurringBill, 'id'>) => {
+    const newBill: RecurringBill = {
+      ...bill,
+      id: `bill-${Date.now()}`,
+    };
+    setRecurringBills([...recurringBills, newBill]);
   };
 
-  const handleClearAllData = () => {
-    if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
-      setTransactions([]);
-      setAccounts([]);
-      setErrors([]);
-      localStorage.clear();
-      alert('All data has been cleared.');
-    }
+  const handleUpdateBill = (bill: RecurringBill) => {
+    setRecurringBills(recurringBills.map(b => b.id === bill.id ? bill : b));
   };
+
+  const handleDeleteBill = (id: string) => {
+    setRecurringBills(recurringBills.filter(b => b.id !== id));
+  };
+
+  const handleAddDebt = (debt: Omit<Debt, 'id'>) => {
+    const newDebt: Debt = {
+      ...debt,
+      id: `debt-${Date.now()}`,
+    };
+    setDebts([...debts, newDebt]);
+  };
+
+  const handleUpdateDebt = (debt: Debt) => {
+    setDebts(debts.map(d => d.id === debt.id ? debt : d));
+  };
+
+  const handleDeleteDebt = (id: string) => {
+    setDebts(debts.filter(d => d.id !== id));
+  };
+
+  const handleDataLoaded = (data: {
+    transactions: Transaction[];
+    account: Account | null;
+    recurringBills: RecurringBill[];
+    debts: Debt[];
+  }) => {
+    setTransactions(data.transactions);
+    setAccount(data.account);
+    setRecurringBills(data.recurringBills);
+    setDebts(data.debts);
+  };
+
+  // Get all transactions including projections
+  const allTransactions = showProjections && account
+    ? calculateBalances(
+        [...transactions, ...generateProjections(recurringBills, 60)],
+        account.availableBalance
+      )
+    : calculateBalances(transactions, account?.availableBalance || 0);
+
+
+  // Calculate projected balance
+  const projectedBalance = allTransactions.length > 0
+    ? allTransactions[allTransactions.length - 1].balance
+    : account?.availableBalance || 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl shadow-2xl p-8 mb-6 border border-gray-700">
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Downey Finance Tracker</h1>
-              <p className="mt-2 text-sm text-gray-600">
-                Personal budget management and financial tracking
+              <h1 className="text-3xl font-bold text-white">USAA Bills</h1>
+              <p className="text-gray-400 mt-2 flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
+                Account •••• {account?.accountNumber.slice(-4)}
               </p>
-              {lastSync && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Last saved: {lastSync.toLocaleString()}
-                </p>
-              )}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleExportData}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-              >
-                Export Data
-              </button>
-              <label className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer text-sm">
-                Import Data
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportData}
-                  className="hidden"
-                />
-              </label>
-              <button
-                onClick={handleClearAllData}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-              >
-                Clear All Data
-              </button>
+            <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-6 py-4 rounded-2xl border border-blue-500/30">
+              <p className="text-sm text-gray-400 mb-1">Balance</p>
+              <p className="text-4xl font-bold text-white">
+                ${account?.availableBalance.toFixed(2) || '0.00'}
+              </p>
+              <p className="text-xs text-green-400 mt-1">Total Week Profit +11.05%</p>
             </div>
           </div>
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Navigation Tabs */}
-        <div className="mb-6 border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+        {/* Tabs */}
+        <div className="bg-gray-800 rounded-3xl shadow-2xl mb-6 border border-gray-700">
+          <nav className="flex gap-2 p-3">
             <button
-              onClick={() => setCurrentView('transactions')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                currentView === 'transactions'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              onClick={() => setCurrentTab('account')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'account'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               }`}
             >
-              Transactions ({transactions.length})
+              Account Info
             </button>
             <button
-              onClick={() => setCurrentView('accounts')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                currentView === 'accounts'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              onClick={() => setCurrentTab('register')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'register'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
               }`}
             >
-              Accounts ({accounts.length})
+              Transactions
+            </button>
+            <button
+              onClick={() => setCurrentTab('recurring')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'recurring'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              Recurring Bills
+            </button>
+            <button
+              onClick={() => setCurrentTab('projections')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'projections'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              Projections
+            </button>
+            <button
+              onClick={() => setCurrentTab('debts')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'debts'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              Debts
+            </button>
+            <button
+              onClick={() => setCurrentTab('sync')}
+              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+                currentTab === 'sync'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              iCloud Sync
             </button>
           </nav>
-        </div>
 
-        {/* Accounts View */}
-        {currentView === 'accounts' && (
-          <AccountManager
-            accounts={accounts}
-            onAddAccount={handleAddAccount}
-            onEditAccount={handleEditAccount}
-            onDeleteAccount={handleDeleteAccount}
-          />
-        )}
+          {/* Tab Content */}
+          <div className="p-6">
+            {/* Account Info Tab */}
+            {currentTab === 'account' && (
+              <div className="space-y-6">
+                <h2 className="text-2xl font-bold text-white">Account Information</h2>
 
-        {/* Transactions View */}
-        {currentView === 'transactions' && (
-          <>
-            {transactions.length === 0 ? (
-              <div className="space-y-8">
-                <CSVImport accounts={accounts} onImportComplete={handleImportComplete} />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30 backdrop-blur-sm">
+                    <h3 className="text-sm font-medium text-blue-300 mb-2">Current Balance</h3>
+                    <p className="text-3xl font-bold text-white">
+                      ${account?.availableBalance.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl p-6 border border-green-500/30 backdrop-blur-sm">
+                    <h3 className="text-sm font-medium text-green-300 mb-2">
+                      Projected Balance (60 days)
+                    </h3>
+                    <p className="text-3xl font-bold text-white">
+                      ${projectedBalance.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl p-6 border border-purple-500/30 backdrop-blur-sm">
+                    <h3 className="text-sm font-medium text-purple-300 mb-2">Transactions</h3>
+                    <p className="text-3xl font-bold text-white">{transactions.length}</p>
+                  </div>
+                </div>
 
-            {errors.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <h3 className="text-red-800 font-semibold mb-2">Import Errors:</h3>
-                <ul className="list-disc list-inside text-red-700 text-sm space-y-1">
-                  {errors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
+                <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
+                  <h3 className="text-lg font-semibold text-white mb-4">Account Details</h3>
+                  <dl className="grid grid-cols-2 gap-4">
+                    <div>
+                      <dt className="text-sm text-gray-400">Account Number</dt>
+                      <dd className="text-lg font-medium text-white">•••• {account?.accountNumber.slice(-4)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-400">Routing Number</dt>
+                      <dd className="text-lg font-medium text-white">{account?.routingNumber}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-400">Institution</dt>
+                      <dd className="text-lg font-medium text-white">{account?.institution}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm text-gray-400">Account Type</dt>
+                      <dd className="text-lg font-medium text-white">Bills</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <h3 className="text-xl font-semibold text-white mb-4">Import Transactions</h3>
+                  <CSVImport onImportComplete={handleImportComplete} />
+                </div>
+
+                <div className="flex items-center gap-3 bg-gray-800/50 rounded-2xl p-4 border border-gray-700">
+                  <input
+                    type="checkbox"
+                    id="showProjections"
+                    checked={showProjections}
+                    onChange={(e) => setShowProjections(e.target.checked)}
+                    className="h-5 w-5 text-blue-500 rounded bg-gray-700 border-gray-600"
+                  />
+                  <label htmlFor="showProjections" className="text-gray-300 font-medium">
+                    Show projected transactions from recurring bills
+                  </label>
+                </div>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Transactions ({transactions.length})
-                </h2>
-                <button
-                  onClick={() => {
-                    setTransactions([]);
-                    setErrors([]);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Import New File
-                </button>
-              </div>
 
-              {errors.length > 0 && (
-                <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                  <p className="text-yellow-800 text-sm">
-                    {errors.length} row(s) had errors during import
-                  </p>
-                </div>
-              )}
+            {/* Register Tab */}
+            {currentTab === 'register' && (
+              <TransactionRegister
+                transactions={allTransactions}
+                onAddTransaction={handleAddTransaction}
+                onDeleteTransaction={handleDeleteTransaction}
+                onCreateRecurringBill={handleAddBill}
+              />
+            )}
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Due Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Account
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Category
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Paid
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Projected Balance
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {transactionsWithBalances
-                      .sort((a, b) => b.date.getTime() - a.date.getTime())
-                      .map((transaction) => (
-                      <tr key={transaction.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {transaction.dueDate
-                            ? transaction.dueDate.toLocaleDateString()
-                            : transaction.date.toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {transaction.description}
-                          {transaction.notes && (
-                            <span className="block text-xs text-gray-500 mt-1">
-                              {transaction.notes}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {transaction.account
-                            ? accounts.find((a) => a.id === transaction.account)?.name || '-'
-                            : '-'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {transaction.category ? (
-                            <span className={`px-3 py-1 rounded font-medium ${getCategoryColor(transaction.category)}`}>
-                              {transaction.category}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td
-                          className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
-                            transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}
-                        >
-                          ${Math.abs(transaction.amount).toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <input
-                            type="checkbox"
-                            checked={transaction.isPaid || false}
-                            onChange={(e) => {
-                              const updated = transactions.map((t) =>
-                                t.id === transaction.id
-                                  ? { ...t, isPaid: e.target.checked, actualPaymentDate: e.target.checked ? new Date() : undefined }
-                                  : t
-                              );
-                              setTransactions(updated);
-                            }}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-semibold">
-                          {transaction.projectedBalance !== undefined ? (
-                            <span
-                              className={
-                                transaction.projectedBalance >= 0
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }
-                            >
-                              ${transaction.projectedBalance.toFixed(2)}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Recurring Bills Tab */}
+            {currentTab === 'recurring' && (
+              <div className="space-y-6">
+                <RecurringSuggestions
+                  transactions={transactions}
+                  existingBills={recurringBills}
+                  onAddBill={handleAddBill}
+                />
+                <RecurringBillsManager
+                  bills={recurringBills}
+                  onAddBill={handleAddBill}
+                  onUpdateBill={handleUpdateBill}
+                  onDeleteBill={handleDeleteBill}
+                />
               </div>
-            </div>
+            )}
+
+            {/* Projections Tab */}
+            {currentTab === 'projections' && (
+              <Projections
+                transactions={allTransactions}
+                currentBalance={account?.availableBalance || 0}
+              />
+            )}
+
+            {/* Debts Tab */}
+            {currentTab === 'debts' && (
+              <DebtsTracker
+                debts={debts}
+                onAddDebt={handleAddDebt}
+                onUpdateDebt={handleUpdateDebt}
+                onDeleteDebt={handleDeleteDebt}
+              />
+            )}
+
+            {/* iCloud Sync Tab */}
+            {currentTab === 'sync' && (
+              <ICloudSync
+                transactions={transactions}
+                account={account}
+                recurringBills={recurringBills}
+                debts={debts}
+                onDataLoaded={handleDataLoaded}
+              />
+            )}
           </div>
-        )}
-        </>
-        )}
-      </main>
+        </div>
+      </div>
     </div>
   );
 }

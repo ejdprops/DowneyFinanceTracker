@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Storage</title>
+</head>
+<body>
+    <h1>Clear Storage</h1>
+    <button onclick="clearStorage()">Clear All LocalStorage</button>
+    <div id="output"></div>
+
+    <script>
+        function clearStorage() {
+            const keys = [
+                'usaa_bills_transactions',
+                'usaa_bills_account',
+                'usaa_bills_recurring',
+                'usaa_bills_debts'
+            ];
+
+            keys.forEach(key => {
+                localStorage.removeItem(key);
+                console.log('Removed:', key);
+            });
+
+            document.getElementById('output').innerHTML = '<p>Storage cleared! Refresh the app.</p>';
+        }
+
+        // Show current storage
+        window.onload = () => {
+            const account = localStorage.getItem('usaa_bills_account');
+            if (account) {
+                document.getElementById('output').innerHTML = '<p>Current account: ' + account + '</p>';
+            } else {
+                document.getElementById('output').innerHTML = '<p>No account data found</p>';
+            }
+        };
+    </script>
+</body>
+</html>

@@ -2,8 +2,7 @@ import Papa from 'papaparse';
 import type { Transaction, ParsedCSVData } from '../types';
 
 /**
- * Parse USAA CSV file and convert to Transaction objects
- * USAA format typically has: Date, Description, Original Description, Category, Amount, Status
+ * Parse USAA Bills CSV - handles the USAA transaction export format
  */
 export const parseUSAACSV = (file: File): Promise<ParsedCSVData> => {
   return new Promise((resolve) => {
@@ -41,99 +40,38 @@ export const parseUSAACSV = (file: File): Promise<ParsedCSVData> => {
   });
 };
 
-/**
- * Parse a single USAA CSV row
- * Handles multiple possible column name variations
- */
 const parseUSAARow = (row: any, index: number): Transaction | null => {
-  // Try different possible column names for date
-  const dateStr = row['Date'] || row['date'] || row['Transaction Date'] || row['Posted Date'];
+  const dateStr = row['Date'] || row['date'];
+  const description = row['Description'] || row['description'];
+  const category = row['Category'] || row['category'] || 'Uncategorized';
+  const amountStr = row['Amount'] || row['amount'];
 
-  // Try different possible column names for description
-  const description = row['Description'] || row['description'] || row['Original Description'] || row['Memo'];
-
-  // Try different possible column names for amount
-  const amountStr = row['Amount'] || row['amount'] || row['Debit'] || row['Credit'];
-
-  // Try different possible column names for balance
-  const balanceStr = row['Balance'] || row['balance'] || row['Running Balance'];
-
-  // Category (if available)
-  const category = row['Category'] || row['category'];
-
-  // Validate required fields
-  if (!dateStr || !description || !amountStr) {
+  if (!dateStr || !description) {
     console.warn(`Skipping row ${index + 1}: Missing required fields`);
     return null;
   }
 
-  // Parse date
   const date = new Date(dateStr);
   if (isNaN(date.getTime())) {
     throw new Error(`Invalid date: ${dateStr}`);
   }
 
-  // Parse amount - handle negative values and currency formatting
-  const amount = parseFloat(amountStr.toString().replace(/[$,]/g, ''));
-  if (isNaN(amount)) {
-    throw new Error(`Invalid amount: ${amountStr}`);
-  }
+  // Parse amount - remove $ and commas, handle negative
+  const amount = parseFloat(amountStr?.toString().replace(/[$,]/g, '') || '0');
 
-  // Parse balance (optional)
-  let balance: number | undefined;
-  if (balanceStr) {
-    balance = parseFloat(balanceStr.toString().replace(/[$,]/g, ''));
-    if (isNaN(balance)) {
-      balance = undefined;
-    }
+  if (isNaN(amount)) {
+    throw new Error('Invalid amount format');
   }
 
   return {
     id: `${date.getTime()}-${index}`,
     date,
     description: description.toString().trim(),
+    category: category.toString().trim(),
     amount,
-    balance,
-    category: category?.toString().trim(),
+    balance: 0, // Will be calculated by calculateBalances
+    isPending: false, // CSV exports are all posted
+    isManual: false,
+    sortOrder: index, // Preserve CSV order
   };
-};
-
-/**
- * Export transactions to CSV format
- */
-export const exportToCSV = (transactions: Transaction[]): string => {
-  const headers = ['Date', 'Description', 'Amount', 'Balance', 'Category', 'Account'];
-
-  const rows = transactions.map(t => [
-    t.date.toLocaleDateString(),
-    t.description,
-    t.amount.toFixed(2),
-    t.balance?.toFixed(2) || '',
-    t.category || '',
-    t.account || '',
-  ]);
-
-  const csv = Papa.unparse({
-    fields: headers,
-    data: rows,
-  });
-
-  return csv;
-};
-
-/**
- * Download data as CSV file
- */
-export const downloadCSV = (data: string, filename: string): void => {
-  const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 };
