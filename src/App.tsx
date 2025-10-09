@@ -153,7 +153,15 @@ function App() {
   // Get all transactions including projections
   const allTransactions = showProjections && account
     ? calculateBalances(
-        [...transactions, ...generateProjections(recurringBills, 60)],
+        [...transactions, ...generateProjections(recurringBills, 60).filter(projection => {
+          // Filter out projected transactions that match existing manual transactions
+          const projectionDate = projection.date.toDateString();
+          const projectionDesc = projection.description.replace(' (Projected)', '');
+          return !transactions.some(t =>
+            t.date.toDateString() === projectionDate &&
+            t.description.toLowerCase() === projectionDesc.toLowerCase()
+          );
+        })],
         account.availableBalance
       )
     : calculateBalances(transactions, account?.availableBalance || 0);
