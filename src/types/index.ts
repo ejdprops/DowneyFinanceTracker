@@ -1,5 +1,6 @@
 export interface Transaction {
   id: string;
+  accountId: string; // Links transaction to specific account
   date: Date;
   description: string;
   category: string;
@@ -15,14 +16,18 @@ export interface Transaction {
 export interface Account {
   id: string;
   name: string;
+  accountType: 'checking' | 'savings' | 'credit_card';
   accountNumber: string;
-  routingNumber: string;
+  routingNumber?: string; // Optional for credit cards
   availableBalance: number;
   institution: string;
+  creditLimit?: number; // For credit cards
+  isDefault?: boolean; // Mark one account as default
 }
 
 export interface RecurringBill {
   id: string;
+  accountId: string; // Links bill to specific account
   description: string;
   category: string;
   amount: number;

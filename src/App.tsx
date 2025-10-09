@@ -7,44 +7,46 @@ import { RecurringSuggestions } from './components/RecurringSuggestions';
 import { Projections } from './components/Projections';
 import { DebtsTracker } from './components/DebtsTracker';
 import { ICloudSync } from './components/ICloudSync';
+import { AccountSelector } from './components/AccountSelector';
+import { AccountManagement } from './components/AccountManagement';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
   loadTransactions,
-  saveAccount,
-  loadAccount,
+  saveAccounts,
+  loadAccounts,
+  saveActiveAccountId,
+  loadActiveAccountId,
   saveRecurringBills,
   loadRecurringBills,
   saveDebts,
   loadDebts,
-  initializeAccount,
+  migrateToMultiAccount,
 } from './utils/storage';
 import { generateProjections, calculateBalances } from './utils/projections';
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'debts' | 'sync'>('account');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [account, setAccount] = useState<Account | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string>('');
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [showProjections, setShowProjections] = useState(true);
   const [dismissedProjections, setDismissedProjections] = useState<Set<string>>(new Set());
+  const [showAccountManagement, setShowAccountManagement] = useState(false);
 
   // Load data on mount
   useEffect(() => {
     const loadedTransactions = loadTransactions();
-    let loadedAccount = loadAccount();
+    const migratedAccounts = migrateToMultiAccount();
+    const savedActiveAccountId = loadActiveAccountId();
     const loadedBills = loadRecurringBills();
     const loadedDebts = loadDebts();
 
-    // Initialize account if it doesn't exist
-    if (!loadedAccount) {
-      loadedAccount = initializeAccount();
-      saveAccount(loadedAccount);
-    }
-
     setTransactions(loadedTransactions);
-    setAccount(loadedAccount);
+    setAccounts(migratedAccounts);
+    setActiveAccountId(savedActiveAccountId || migratedAccounts[0]?.id || '');
     setRecurringBills(loadedBills);
     setDebts(loadedDebts);
   }, []);
@@ -57,10 +59,16 @@ function App() {
   }, [transactions]);
 
   useEffect(() => {
-    if (account) {
-      saveAccount(account);
+    if (accounts.length > 0) {
+      saveAccounts(accounts);
     }
-  }, [account]);
+  }, [accounts]);
+
+  useEffect(() => {
+    if (activeAccountId) {
+      saveActiveAccountId(activeAccountId);
+    }
+  }, [activeAccountId]);
 
   useEffect(() => {
     if (recurringBills.length > 0) {
@@ -74,7 +82,47 @@ function App() {
     }
   }, [debts]);
 
+  // Get active account
+  const account = accounts.find(a => a.id === activeAccountId) || null;
+
+  // Filter transactions and bills for active account
+  const accountTransactions = transactions.filter(t => t.accountId === activeAccountId);
+  const accountRecurringBills = recurringBills.filter(b => b.accountId === activeAccountId);
+
+  // Account management handlers
+  const handleSelectAccount = (accountId: string) => {
+    setActiveAccountId(accountId);
+  };
+
+  const handleAddAccount = (accountData: Omit<Account, 'id'>) => {
+    const newAccount: Account = {
+      ...accountData,
+      id: `account-${Date.now()}`,
+    };
+    setAccounts([...accounts, newAccount]);
+  };
+
+  const handleUpdateAccount = (updatedAccount: Account) => {
+    setAccounts(accounts.map(a => a.id === updatedAccount.id ? updatedAccount : a));
+  };
+
+  const handleDeleteAccount = (accountId: string) => {
+    // Remove all transactions for this account
+    setTransactions(transactions.filter(t => t.accountId !== accountId));
+    // Remove all recurring bills for this account
+    setRecurringBills(recurringBills.filter(b => b.accountId !== accountId));
+    // Remove the account
+    const newAccounts = accounts.filter(a => a.id !== accountId);
+    setAccounts(newAccounts);
+    // Switch to first remaining account
+    if (activeAccountId === accountId && newAccounts.length > 0) {
+      setActiveAccountId(newAccounts[0].id);
+    }
+  };
+
   const handleImportComplete = (data: ParsedCSVData) => {
+    if (!activeAccountId) return;
+
     // Track duplicates and updates
     let newCount = 0;
     let updatedCount = 0;
@@ -83,11 +131,15 @@ function App() {
     const updatedTransactions = [...transactions];
 
     data.transactions.forEach(importedTx => {
-      // Check for existing transaction by date + description + amount
+      // Add accountId to imported transaction
+      const txWithAccount = { ...importedTx, accountId: activeAccountId };
+
+      // Check for existing transaction by date + description + amount + account
       const existingIndex = updatedTransactions.findIndex(t =>
-        t.date.toDateString() === importedTx.date.toDateString() &&
-        t.description === importedTx.description &&
-        Math.abs(t.amount - importedTx.amount) < 0.01 // Allow small floating point differences
+        t.accountId === activeAccountId &&
+        t.date.toDateString() === txWithAccount.date.toDateString() &&
+        t.description === txWithAccount.description &&
+        Math.abs(t.amount - txWithAccount.amount) < 0.01 // Allow small floating point differences
       );
 
       if (existingIndex !== -1) {
@@ -95,7 +147,7 @@ function App() {
         // If existing was manual (user created from projected or added manually), update it
         if (existing.isManual) {
           updatedTransactions[existingIndex] = {
-            ...importedTx,
+            ...txWithAccount,
             isReconciled: existing.isReconciled, // Preserve reconciled status
           };
           updatedCount++;
@@ -105,7 +157,7 @@ function App() {
         }
       } else {
         // New transaction
-        updatedTransactions.push(importedTx);
+        updatedTransactions.push(txWithAccount);
         newCount++;
       }
     });
@@ -124,10 +176,12 @@ function App() {
     // Imported transactions have historical balances that may be old
   };
 
-  const handleAddTransaction = (transaction: Omit<Transaction, 'id'>) => {
+  const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'accountId'>) => {
+    if (!activeAccountId) return;
     const newTransaction: Transaction = {
       ...transaction,
       id: `manual-${Date.now()}`,
+      accountId: activeAccountId,
     };
     setTransactions([...transactions, newTransaction]);
   };
@@ -144,10 +198,12 @@ function App() {
     setDismissedProjections(new Set([...dismissedProjections, projectionId]));
   };
 
-  const handleAddBill = (bill: Omit<RecurringBill, 'id'>) => {
+  const handleAddBill = (bill: Omit<RecurringBill, 'id' | 'accountId'>) => {
+    if (!activeAccountId) return;
     const newBill: RecurringBill = {
       ...bill,
       id: `bill-${Date.now()}`,
+      accountId: activeAccountId,
     };
     setRecurringBills([...recurringBills, newBill]);
   };
@@ -178,20 +234,22 @@ function App() {
 
   const handleDataLoaded = (data: {
     transactions: Transaction[];
-    account: Account | null;
+    accounts: Account[];
+    activeAccountId: string;
     recurringBills: RecurringBill[];
     debts: Debt[];
   }) => {
     setTransactions(data.transactions);
-    setAccount(data.account);
+    setAccounts(data.accounts);
+    setActiveAccountId(data.activeAccountId);
     setRecurringBills(data.recurringBills);
     setDebts(data.debts);
   };
 
-  // Get all transactions including projections
+  // Get all transactions including projections for active account
   const allTransactions = showProjections && account
     ? calculateBalances(
-        [...transactions, ...generateProjections(recurringBills, 60).filter(projection => {
+        [...accountTransactions, ...generateProjections(accountRecurringBills, 60).filter(projection => {
           // Filter out dismissed projections
           if (dismissedProjections.has(projection.id)) {
             return false;
@@ -200,14 +258,14 @@ function App() {
           // Filter out projected transactions that match existing manual transactions
           const projectionDate = projection.date.toDateString();
           const projectionDesc = projection.description.replace(' (Projected)', '');
-          return !transactions.some(t =>
+          return !accountTransactions.some(t =>
             t.date.toDateString() === projectionDate &&
             t.description.toLowerCase() === projectionDesc.toLowerCase()
           );
         })],
         account.availableBalance
       )
-    : calculateBalances(transactions, account?.availableBalance || 0);
+    : calculateBalances(accountTransactions, account?.availableBalance || 0);
 
 
   // Calculate projected balance
@@ -220,20 +278,34 @@ function App() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Header */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl shadow-2xl p-8 mb-6 border border-gray-700">
+          <div className="mb-6">
+            <AccountSelector
+              accounts={accounts}
+              activeAccountId={activeAccountId}
+              onSelectAccount={handleSelectAccount}
+              onManageAccounts={() => setShowAccountManagement(true)}
+            />
+          </div>
           <div className="flex justify-between items-start">
             <div>
-              <h1 className="text-3xl font-bold text-white">USAA Bills</h1>
+              <h1 className="text-3xl font-bold text-white">{account?.name || 'No Account'}</h1>
               <p className="text-gray-400 mt-2 flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
-                Account •••• {account?.accountNumber.slice(-4)}
+                {account?.institution} •••• {account?.accountNumber.slice(-4)}
               </p>
             </div>
             <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-6 py-4 rounded-2xl border border-blue-500/30">
-              <p className="text-sm text-gray-400 mb-1">Balance</p>
+              <p className="text-sm text-gray-400 mb-1">
+                {account?.accountType === 'credit_card' ? 'Balance' : 'Available'}
+              </p>
               <p className="text-4xl font-bold text-white">
                 ${account?.availableBalance.toFixed(2) || '0.00'}
               </p>
-              <p className="text-xs text-green-400 mt-1">Total Week Profit +11.05%</p>
+              {account?.accountType === 'credit_card' && account?.creditLimit && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Limit: ${account.creditLimit.toLocaleString()}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -385,7 +457,7 @@ function App() {
                 onCreateRecurringBill={handleAddBill}
                 onUpdateTransaction={handleUpdateTransaction}
                 onDismissProjection={handleDismissProjection}
-                recurringBills={recurringBills}
+                recurringBills={accountRecurringBills}
               />
             )}
 
@@ -393,12 +465,12 @@ function App() {
             {currentTab === 'recurring' && (
               <div className="space-y-6">
                 <RecurringSuggestions
-                  transactions={transactions}
-                  existingBills={recurringBills}
+                  transactions={accountTransactions}
+                  existingBills={accountRecurringBills}
                   onAddBill={handleAddBill}
                 />
                 <RecurringBillsManager
-                  bills={recurringBills}
+                  bills={accountRecurringBills}
                   onAddBill={handleAddBill}
                   onUpdateBill={handleUpdateBill}
                   onDeleteBill={handleDeleteBill}
@@ -428,7 +500,8 @@ function App() {
             {currentTab === 'sync' && (
               <ICloudSync
                 transactions={transactions}
-                account={account}
+                accounts={accounts}
+                activeAccountId={activeAccountId}
                 recurringBills={recurringBills}
                 debts={debts}
                 onDataLoaded={handleDataLoaded}
@@ -436,6 +509,17 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Account Management Modal */}
+        {showAccountManagement && (
+          <AccountManagement
+            accounts={accounts}
+            onAddAccount={handleAddAccount}
+            onUpdateAccount={handleUpdateAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onClose={() => setShowAccountManagement(false)}
+          />
+        )}
       </div>
     </div>
   );

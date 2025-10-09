@@ -11,12 +11,14 @@ import type { Transaction, Account, RecurringBill, Debt } from '../types';
 
 interface ICloudSyncProps {
   transactions: Transaction[];
-  account: Account | null;
+  accounts: Account[];
+  activeAccountId: string;
   recurringBills: RecurringBill[];
   debts: Debt[];
   onDataLoaded: (data: {
     transactions: Transaction[];
-    account: Account | null;
+    accounts: Account[];
+    activeAccountId: string;
     recurringBills: RecurringBill[];
     debts: Debt[];
   }) => void;
@@ -24,7 +26,8 @@ interface ICloudSyncProps {
 
 export const ICloudSync: React.FC<ICloudSyncProps> = ({
   transactions,
-  account,
+  accounts,
+  activeAccountId,
   recurringBills,
   debts,
   onDataLoaded,
@@ -48,7 +51,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
         if (confirmed) {
           onDataLoaded({
             transactions: data.transactions,
-            account: data.account,
+            accounts: data.accounts || (data.account ? [data.account] : []),
+            activeAccountId: data.activeAccountId || data.account?.id || '',
             recurringBills: data.recurringBills,
             debts: data.debts,
           });
@@ -66,7 +70,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
     setIsSyncing(true);
     const success = await saveToICloud(iCloudDirHandle, {
       transactions,
-      account,
+      accounts,
+      activeAccountId,
       recurringBills,
       debts,
       lastModified: new Date().toISOString(),
@@ -95,7 +100,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
       if (confirmed) {
         onDataLoaded({
           transactions: data.transactions,
-          account: data.account,
+          accounts: data.accounts || (data.account ? [data.account] : []),
+          activeAccountId: data.activeAccountId || data.account?.id || '',
           recurringBills: data.recurringBills,
           debts: data.debts,
         });
@@ -107,7 +113,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
   const handleExport = () => {
     exportData({
       transactions,
-      account,
+      accounts,
+      activeAccountId,
       recurringBills,
       debts,
       lastModified: new Date().toISOString(),
@@ -123,7 +130,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
       if (confirmed) {
         onDataLoaded({
           transactions: data.transactions,
-          account: data.account,
+          accounts: data.accounts || (data.account ? [data.account] : []),
+          activeAccountId: data.activeAccountId || data.account?.id || '',
           recurringBills: data.recurringBills,
           debts: data.debts,
         });

@@ -28,7 +28,9 @@ const DATA_FILE = 'finance-data.json';
 
 interface AppData {
   transactions: Transaction[];
-  account: Account | null;
+  account?: Account | null; // Legacy support
+  accounts?: Account[]; // New multi-account
+  activeAccountId?: string; // New multi-account
   recurringBills: RecurringBill[];
   debts: Debt[];
   lastModified: string;
