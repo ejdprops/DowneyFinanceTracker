@@ -7,6 +7,7 @@ interface TransactionRegisterProps {
   onDeleteTransaction: (id: string) => void;
   onCreateRecurringBill: (bill: Omit<RecurringBill, 'id'>) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
+  recurringBills: RecurringBill[];
 }
 
 export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
@@ -15,6 +16,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   onDeleteTransaction,
   onCreateRecurringBill,
   onUpdateTransaction,
+  recurringBills,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,14 +52,38 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     });
   };
 
+  const hasRecurringBill = (transaction: Transaction): boolean => {
+    const cleanDescription = transaction.description.replace(' (Projected)', '');
+    return recurringBills.some(bill =>
+      bill.description.toLowerCase() === cleanDescription.toLowerCase() ||
+      bill.description.toLowerCase().includes(cleanDescription.toLowerCase()) ||
+      cleanDescription.toLowerCase().includes(bill.description.toLowerCase())
+    );
+  };
+
   const handleMarkAsProcessed = (transaction: Transaction) => {
     // Remove "(Projected)" from description and mark as pending instead of projected
     const newDescription = transaction.description.replace(' (Projected)', '');
-    onUpdateTransaction({
-      ...transaction,
-      description: newDescription,
-      isPending: true, // Mark as pending instead of projected
-    });
+
+    // If this is a projected transaction (ID starts with 'proj-'), we need to add it as a new transaction
+    if (transaction.id.startsWith('proj-')) {
+      onAddTransaction({
+        date: transaction.date,
+        description: newDescription,
+        category: transaction.category,
+        amount: transaction.amount,
+        balance: transaction.balance,
+        isPending: true,
+        isManual: true, // Mark as manual since user is manually processing it
+      });
+    } else {
+      // Otherwise just update the existing transaction
+      onUpdateTransaction({
+        ...transaction,
+        description: newDescription,
+        isPending: true,
+      });
+    }
   };
 
   return (
@@ -191,22 +217,24 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                       {transaction.description.includes('(Projected)') ? (
                         <button
                           onClick={() => handleMarkAsProcessed(transaction)}
-                          className="text-green-400 hover:text-green-300 transition-colors font-medium"
+                          className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium text-xs"
                         >
                           Mark as Processed
                         </button>
                       ) : (
                         <>
-                          <button
-                            onClick={() => setSelectedTransaction(transaction)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors font-medium"
-                          >
-                            Make Recurring
-                          </button>
+                          {!hasRecurringBill(transaction) && (
+                            <button
+                              onClick={() => setSelectedTransaction(transaction)}
+                              className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium text-xs"
+                            >
+                              Make Recurring
+                            </button>
+                          )}
                           {transaction.isManual && (
                             <button
                               onClick={() => onDeleteTransaction(transaction.id)}
-                              className="text-red-400 hover:text-red-300 transition-colors font-medium"
+                              className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-xs"
                             >
                               Delete
                             </button>

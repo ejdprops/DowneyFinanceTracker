@@ -330,6 +330,7 @@ function App() {
                 onDeleteTransaction={handleDeleteTransaction}
                 onCreateRecurringBill={handleAddBill}
                 onUpdateTransaction={handleUpdateTransaction}
+                recurringBills={recurringBills}
               />
             )}
 
