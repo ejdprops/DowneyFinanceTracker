@@ -158,7 +158,12 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                   <td className="px-4 py-3 text-sm text-white">
                     <div className="flex items-center gap-2">
                       {transaction.description}
-                      {transaction.isPending && (
+                      {transaction.isReconciled && (
+                        <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-300 rounded-lg border border-green-500/30">
+                          Cleared
+                        </span>
+                      )}
+                      {transaction.isPending && !transaction.isReconciled && (
                         <span className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-300 rounded-lg border border-yellow-500/30">
                           Pending
                         </span>
