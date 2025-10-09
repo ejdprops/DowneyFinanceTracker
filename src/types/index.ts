@@ -1,6 +1,6 @@
 export interface Transaction {
   id: string;
-  accountId: string; // Links transaction to specific account
+  accountId?: string; // Links transaction to specific account (optional for backward compatibility)
   date: Date;
   description: string;
   category: string;
@@ -27,7 +27,7 @@ export interface Account {
 
 export interface RecurringBill {
   id: string;
-  accountId: string; // Links bill to specific account
+  accountId?: string; // Links bill to specific account (optional for backward compatibility)
   description: string;
   category: string;
   amount: number;
