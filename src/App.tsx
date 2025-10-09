@@ -73,16 +73,47 @@ function App() {
   }, [debts]);
 
   const handleImportComplete = (data: ParsedCSVData) => {
-    const existingIds = new Set(transactions.map(t => t.id));
-    const newTransactions = data.transactions.filter(t => !existingIds.has(t.id));
+    // Track duplicates and updates
+    let newCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
 
-    setTransactions([...transactions, ...newTransactions]);
+    const updatedTransactions = [...transactions];
+
+    data.transactions.forEach(importedTx => {
+      // Check for existing transaction by date + description + amount
+      const existingIndex = updatedTransactions.findIndex(t =>
+        t.date.toDateString() === importedTx.date.toDateString() &&
+        t.description === importedTx.description &&
+        Math.abs(t.amount - importedTx.amount) < 0.01 // Allow small floating point differences
+      );
+
+      if (existingIndex !== -1) {
+        const existing = updatedTransactions[existingIndex];
+        // If existing was pending/manual, update it to the CSV version (clearing pending status)
+        if (existing.isPending || existing.isManual) {
+          updatedTransactions[existingIndex] = {
+            ...importedTx,
+            isReconciled: existing.isReconciled, // Preserve reconciled status
+          };
+          updatedCount++;
+        } else {
+          skippedCount++;
+        }
+      } else {
+        // New transaction
+        updatedTransactions.push(importedTx);
+        newCount++;
+      }
+    });
+
+    setTransactions(updatedTransactions);
 
     if (data.errors.length > 0) {
       alert(`Import completed with ${data.errors.length} errors. Check console for details.`);
       console.error('Import errors:', data.errors);
     } else {
-      alert(`Successfully imported ${newTransactions.length} transactions`);
+      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}`);
     }
 
     // Note: We do NOT update the account balance from imported transactions

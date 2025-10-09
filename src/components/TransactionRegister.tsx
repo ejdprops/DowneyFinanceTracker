@@ -233,13 +233,14 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                           )}
                           <button
                             onClick={() => {
-                              if (confirm(`Are you sure you want to delete this transaction?\n\n${transaction.description}\n${transaction.amount < 0 ? '-' : ''}$${Math.abs(transaction.amount).toFixed(2)}`)) {
+                              if (confirm(`Are you sure you want to permanently remove this transaction?\n\n${transaction.description}\n${transaction.amount < 0 ? '-' : ''}$${Math.abs(transaction.amount).toFixed(2)}\n\nThis action cannot be undone.`)) {
                                 onDeleteTransaction(transaction.id);
                               }
                             }}
                             className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-xs"
+                            title="Permanently remove this transaction"
                           >
-                            Delete
+                            Remove
                           </button>
                         </>
                       )}
