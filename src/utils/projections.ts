@@ -73,6 +73,7 @@ const getNextOccurrence = (
  * 2. For historical transactions (before today): work backwards from current balance
  * 3. For future projections (after today): work forwards from current balance
  * 4. Preserves original CSV order using sortOrder field
+ * 5. Projected transactions with isProjectedVisible === false are excluded from balance calculations
  */
 export const calculateBalances = (
   transactions: Transaction[],
@@ -114,16 +115,23 @@ export const calculateBalances = (
   if (historical.length > 0) {
     let balance = currentAccountBalance;
 
-    // Work backwards through historical transactions
+    // Work backwards through historical transactions (only count visible ones)
     for (let i = historical.length - 1; i >= 0; i--) {
-      balance -= historical[i].amount; // Subtract to go back in time
+      // Skip projected transactions that are toggled off
+      const isVisible = historical[i].isProjectedVisible !== false;
+      if (isVisible) {
+        balance -= historical[i].amount; // Subtract to go back in time
+      }
     }
 
     // Now work forwards to assign balances
     for (let i = 0; i < historical.length; i++) {
-      balance += historical[i].amount;
-      // Round to 2 decimal places to avoid floating point errors
-      balance = Math.round(balance * 100) / 100;
+      const isVisible = historical[i].isProjectedVisible !== false;
+      if (isVisible) {
+        balance += historical[i].amount;
+        // Round to 2 decimal places to avoid floating point errors
+        balance = Math.round(balance * 100) / 100;
+      }
       result.push({ ...historical[i], balance });
     }
   }
@@ -131,9 +139,12 @@ export const calculateBalances = (
   // Calculate future balances (work forwards from current balance)
   let futureBalance = currentAccountBalance;
   for (const t of future) {
-    futureBalance += t.amount;
-    // Round to 2 decimal places to avoid floating point errors
-    futureBalance = Math.round(futureBalance * 100) / 100;
+    const isVisible = t.isProjectedVisible !== false;
+    if (isVisible) {
+      futureBalance += t.amount;
+      // Round to 2 decimal places to avoid floating point errors
+      futureBalance = Math.round(futureBalance * 100) / 100;
+    }
     result.push({ ...t, balance: futureBalance });
   }
 

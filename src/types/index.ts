@@ -9,6 +9,7 @@ export interface Transaction {
   isManual: boolean; // True if manually entered vs imported
   isReconciled?: boolean; // True if transaction has been reconciled
   sortOrder?: number; // Preserves original CSV order
+  isProjectedVisible?: boolean; // For projected transactions - controls visibility in balance calculations
 }
 
 export interface Account {

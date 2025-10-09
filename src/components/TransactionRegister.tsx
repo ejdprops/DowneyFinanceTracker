@@ -24,6 +24,8 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showPending, setShowPending] = useState(true);
+  const [editingAmount, setEditingAmount] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState('');
 
   // Sort transactions (newest first)
   // Use sortOrder if available (preserves CSV chronological order)
@@ -61,6 +63,37 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
       bill.description.toLowerCase().includes(cleanDescription.toLowerCase()) ||
       cleanDescription.toLowerCase().includes(bill.description.toLowerCase())
     );
+  };
+
+  const handleToggleProjectedVisibility = (transaction: Transaction) => {
+    onUpdateTransaction({
+      ...transaction,
+      isProjectedVisible: transaction.isProjectedVisible === false ? true : false,
+    });
+  };
+
+  const handleStartEditAmount = (transaction: Transaction) => {
+    setEditingAmount(transaction.id);
+    setEditAmount(Math.abs(transaction.amount).toString());
+  };
+
+  const handleSaveAmount = (transaction: Transaction) => {
+    const newAmount = parseFloat(editAmount);
+    if (!isNaN(newAmount)) {
+      // Preserve the sign (debit/credit)
+      const signedAmount = transaction.amount < 0 ? -Math.abs(newAmount) : Math.abs(newAmount);
+      onUpdateTransaction({
+        ...transaction,
+        amount: signedAmount,
+      });
+    }
+    setEditingAmount(null);
+    setEditAmount('');
+  };
+
+  const handleCancelEditAmount = () => {
+    setEditingAmount(null);
+    setEditAmount('');
   };
 
   const handleMarkAsProcessed = (transaction: Transaction) => {
@@ -191,12 +224,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                           Cleared
                         </span>
                       )}
-                      {transaction.isPending && !transaction.isReconciled && (
+                      {transaction.description.includes('(Projected)') ? (
+                        <span className="px-2 py-0.5 text-xs bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/30">
+                          Projected
+                        </span>
+                      ) : transaction.isPending && !transaction.isReconciled && (
                         <span className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-300 rounded-lg border border-yellow-500/30">
                           Pending
                         </span>
                       )}
-                      {transaction.isManual && (
+                      {transaction.isManual && !transaction.description.includes('(Projected)') && (
                         <span className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
                           Manual
                         </span>
@@ -209,15 +246,63 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                   <td className={`px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${
                     transaction.amount < 0 ? 'text-red-400' : 'text-green-400'
                   }`}>
-                    {transaction.amount < 0 ? '-' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                    {editingAmount === transaction.id && !transaction.isReconciled ? (
+                      <div className="flex items-center gap-1 justify-end">
+                        <span className="text-gray-300">{transaction.amount < 0 ? '-' : ''}$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveAmount(transaction);
+                            if (e.key === 'Escape') handleCancelEditAmount();
+                          }}
+                          className="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-right"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveAmount(transaction)}
+                          className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={handleCancelEditAmount}
+                          className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => !transaction.isReconciled && handleStartEditAmount(transaction)}
+                        className={`text-right w-full ${!transaction.isReconciled ? 'hover:bg-gray-700/50 rounded px-2 py-1 cursor-pointer' : 'cursor-default'}`}
+                        disabled={transaction.isReconciled}
+                        title={transaction.isReconciled ? 'Cannot edit reconciled transaction' : 'Click to edit amount'}
+                      >
+                        {transaction.amount < 0 ? '-' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold text-white">
                     ${transaction.balance.toFixed(2)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
-                    <div className="flex gap-2 justify-center">
+                    <div className="flex gap-2 justify-center items-center">
                       {transaction.description.includes('(Projected)') ? (
                         <>
+                          <button
+                            onClick={() => handleToggleProjectedVisibility(transaction)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                              transaction.isProjectedVisible !== false ? 'bg-blue-500' : 'bg-gray-600'
+                            }`}
+                            title={transaction.isProjectedVisible !== false ? 'Included in balance' : 'Excluded from balance'}
+                          >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              transaction.isProjectedVisible !== false ? 'translate-x-6' : 'translate-x-1'
+                            }`} />
+                          </button>
                           <button
                             onClick={() => handleMarkAsProcessed(transaction)}
                             className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium text-xs"
