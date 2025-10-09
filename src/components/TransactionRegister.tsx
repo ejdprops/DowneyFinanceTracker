@@ -231,14 +231,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                               Make Recurring
                             </button>
                           )}
-                          {transaction.isManual && (
-                            <button
-                              onClick={() => onDeleteTransaction(transaction.id)}
-                              className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-xs"
-                            >
-                              Delete
-                            </button>
-                          )}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to delete this transaction?\n\n${transaction.description}\n${transaction.amount < 0 ? '-' : ''}$${Math.abs(transaction.amount).toFixed(2)}`)) {
+                                onDeleteTransaction(transaction.id);
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-xs"
+                          >
+                            Delete
+                          </button>
                         </>
                       )}
                     </div>
