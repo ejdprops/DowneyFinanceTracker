@@ -27,6 +27,7 @@ function App() {
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [showProjections, setShowProjections] = useState(true);
+  const [dismissedProjections, setDismissedProjections] = useState<Set<string>>(new Set());
 
   // Load data on mount
   useEffect(() => {
@@ -138,6 +139,10 @@ function App() {
     setTransactions(transactions.map(t => t.id === transaction.id ? transaction : t));
   };
 
+  const handleDismissProjection = (projectionId: string) => {
+    setDismissedProjections(new Set([...dismissedProjections, projectionId]));
+  };
+
   const handleAddBill = (bill: Omit<RecurringBill, 'id'>) => {
     const newBill: RecurringBill = {
       ...bill,
@@ -186,6 +191,11 @@ function App() {
   const allTransactions = showProjections && account
     ? calculateBalances(
         [...transactions, ...generateProjections(recurringBills, 60).filter(projection => {
+          // Filter out dismissed projections
+          if (dismissedProjections.has(projection.id)) {
+            return false;
+          }
+
           // Filter out projected transactions that match existing manual transactions
           const projectionDate = projection.date.toDateString();
           const projectionDesc = projection.description.replace(' (Projected)', '');
@@ -370,6 +380,7 @@ function App() {
                 onDeleteTransaction={handleDeleteTransaction}
                 onCreateRecurringBill={handleAddBill}
                 onUpdateTransaction={handleUpdateTransaction}
+                onDismissProjection={handleDismissProjection}
                 recurringBills={recurringBills}
               />
             )}

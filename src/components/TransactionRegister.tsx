@@ -7,6 +7,7 @@ interface TransactionRegisterProps {
   onDeleteTransaction: (id: string) => void;
   onCreateRecurringBill: (bill: Omit<RecurringBill, 'id'>) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
+  onDismissProjection: (id: string) => void;
   recurringBills: RecurringBill[];
 }
 
@@ -16,6 +17,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   onDeleteTransaction,
   onCreateRecurringBill,
   onUpdateTransaction,
+  onDismissProjection,
   recurringBills,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -215,12 +217,25 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                   <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
                     <div className="flex gap-2 justify-center">
                       {transaction.description.includes('(Projected)') ? (
-                        <button
-                          onClick={() => handleMarkAsProcessed(transaction)}
-                          className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium text-xs"
-                        >
-                          Mark as Processed
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleMarkAsProcessed(transaction)}
+                            className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium text-xs"
+                          >
+                            Mark as Processed
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Dismiss this projected transaction?\n\n${transaction.description}\n${transaction.amount < 0 ? '-' : ''}$${Math.abs(transaction.amount).toFixed(2)}\n\nIt will not appear again.`)) {
+                                onDismissProjection(transaction.id);
+                              }
+                            }}
+                            className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors font-medium text-xs"
+                            title="Dismiss this projection"
+                          >
+                            Dismiss
+                          </button>
+                        </>
                       ) : (
                         <>
                           {!hasRecurringBill(transaction) && (
