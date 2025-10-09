@@ -90,14 +90,15 @@ function App() {
 
       if (existingIndex !== -1) {
         const existing = updatedTransactions[existingIndex];
-        // If existing was pending/manual, update it to the CSV version (clearing pending status)
-        if (existing.isPending || existing.isManual) {
+        // If existing was manual (user created from projected or added manually), update it
+        if (existing.isManual) {
           updatedTransactions[existingIndex] = {
             ...importedTx,
             isReconciled: existing.isReconciled, // Preserve reconciled status
           };
           updatedCount++;
         } else {
+          // Already imported from CSV, skip duplicate
           skippedCount++;
         }
       } else {
