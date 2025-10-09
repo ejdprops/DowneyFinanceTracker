@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CSVImport } from './components/CSVImport';
+import { JSONImport } from './components/JSONImport';
 import { TransactionRegister } from './components/TransactionRegister';
 import { RecurringBillsManager } from './components/RecurringBillsManager';
 import { RecurringSuggestions } from './components/RecurringSuggestions';
@@ -354,7 +355,10 @@ function App() {
 
                 <div>
                   <h3 className="text-xl font-semibold text-white mb-4">Import Transactions</h3>
-                  <CSVImport onImportComplete={handleImportComplete} />
+                  <div className="flex gap-4">
+                    <CSVImport onImportComplete={handleImportComplete} />
+                    <JSONImport onImportComplete={handleImportComplete} />
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3 bg-gray-800/50 rounded-2xl p-4 border border-gray-700">
