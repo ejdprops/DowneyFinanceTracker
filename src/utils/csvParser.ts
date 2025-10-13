@@ -328,6 +328,77 @@ const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
 };
 
 /**
+ * Apple Card Format Parser
+ */
+const parseAppleCardRow = (row: any, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>): Transaction | null => {
+  // Apple Card format: Transaction Date, Clearing Date, Description, Merchant, Category, Type (Purchase/Payment), Amount (USD), Purchased By
+  const transactionDateStr = row['Transaction Date'];
+  const clearingDateStr = row['Clearing Date'];
+  const description = row['Description'] || row['Merchant'];
+  const merchant = row['Merchant'];
+  const category = row['Category'] || 'Uncategorized';
+  const type = row['Type']; // "Purchase", "Payment", "Adjustment", etc.
+  const amountStr = row['Amount (USD)'];
+
+  if (!transactionDateStr || !description) {
+    return null;
+  }
+
+  // Use Transaction Date (when transaction occurred) as the primary date
+  const date = parseDate(transactionDateStr);
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid date: ${transactionDateStr}`);
+  }
+
+  // Parse amount - Apple Card shows positive numbers for purchases and negative for payments
+  let amount = parseFloat(amountStr?.toString().replace(/[$,]/g, '') || '0');
+
+  if (isNaN(amount)) {
+    throw new Error('Invalid amount format');
+  }
+
+  // Normalize amount: Purchases should be negative (money spent), Payments should be positive (money added)
+  // Apple Card CSV shows purchases as positive, so we need to invert them
+  if (type && type.toLowerCase().includes('purchase')) {
+    amount = -Math.abs(amount); // Make purchases negative
+  } else if (type && (type.toLowerCase().includes('payment') || type.toLowerCase().includes('refund'))) {
+    amount = Math.abs(amount); // Make payments/refunds positive
+  }
+
+  // Check if transaction is pending (has Transaction Date but no Clearing Date)
+  const isPending = !clearingDateStr || clearingDateStr.trim() === '';
+
+  // Combine description with merchant if different
+  let combinedDescription = description.toString().trim();
+  if (merchant && merchant.toString().trim() && merchant !== description) {
+    combinedDescription = `${description} - ${merchant}`.trim();
+  }
+
+  // Generate stable ID with date-based sequence
+  const dateKey = date.toISOString().split('T')[0];
+  const currentCount = dateCounts?.get(dateKey) || 0;
+  const totalCount = dateTotals?.get(dateKey) || 1;
+  const sequenceNumber = totalCount - currentCount;
+  const paddedNumber = sequenceNumber.toString().padStart(3, '0');
+  const id = `APPLE-${dateKey}-${paddedNumber}`;
+
+  dateCounts?.set(dateKey, currentCount + 1);
+
+  return {
+    id,
+    date,
+    description: combinedDescription,
+    category: category.toString().trim(),
+    amount,
+    balance: 0,
+    isPending,
+    isReconciled: !isPending,
+    isManual: false,
+    sortOrder: index,
+  };
+};
+
+/**
  * Generic Format Parser (fallback)
  */
 const parseGenericRow = (row: any, index: number): Transaction | null => {
@@ -374,6 +445,17 @@ const parseGenericRow = (row: any, index: number): Transaction | null => {
  * Bank format definitions
  */
 const bankFormats: BankCSVFormat[] = [
+  {
+    name: 'Apple Card',
+    detect: (headers) => {
+      const headerStr = headers.join(',').toLowerCase();
+      // Apple Card has very specific headers including "clearing date" and "amount (usd)"
+      return (headerStr.includes('transaction date') || headerStr.includes('transactiondate')) &&
+             (headerStr.includes('clearing date') || headerStr.includes('clearingdate')) &&
+             (headerStr.includes('amount (usd)') || headerStr.includes('amount(usd)'));
+    },
+    parse: parseAppleCardRow,
+  },
   {
     name: 'USAA',
     detect: (headers) => {

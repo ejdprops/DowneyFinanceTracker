@@ -142,7 +142,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
                 <span className="px-3 py-1 bg-gray-700 rounded-lg">PDF</span>
               </div>
               <p className="text-xs mt-3 text-gray-500">
-                Supports USAA, Chase, Bank of America, Wells Fargo, Capital One, and more
+                Supports Apple Card, USAA, Chase, Bank of America, Wells Fargo, Capital One, and more
               </p>
             </div>
           </div>
