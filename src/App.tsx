@@ -651,7 +651,9 @@ function App() {
             {/* Spending Charts Tab */}
             {currentTab === 'charts' && (
               <SpendingCharts
-                transactions={accountTransactions}
+                transactions={transactions}
+                accounts={accounts}
+                activeAccountId={activeAccountId}
               />
             )}
 

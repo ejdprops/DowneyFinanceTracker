@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { compareTwoStrings } from 'string-similarity';
-import type { Transaction, MerchantMapping } from '../types';
+import type { Transaction, MerchantMapping, Account } from '../types';
 import { loadMerchantMappings } from '../utils/storage';
 
 interface SpendingChartsProps {
   transactions: Transaction[];
+  accounts: Account[];
+  activeAccountId: string;
 }
 
 // Common merchant patterns to group similar descriptions
@@ -118,22 +120,96 @@ const normalizeMerchantName = (
     .join(' ') || description;
 };
 
-export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) => {
+// Detect if two transactions are likely transfers (same amount, opposite signs, within 3 days)
+const areTransfersMatching = (t1: Transaction, t2: Transaction): boolean => {
+  // Must be opposite signs
+  if (Math.sign(t1.amount) === Math.sign(t2.amount)) return false;
+
+  // Must be same absolute amount
+  if (Math.abs(t1.amount) !== Math.abs(t2.amount)) return false;
+
+  // Must be from different accounts
+  if (t1.accountId === t2.accountId) return false;
+
+  // Must be within 3 days of each other
+  const date1 = new Date(t1.date).getTime();
+  const date2 = new Date(t2.date).getTime();
+  const daysDiff = Math.abs(date1 - date2) / (1000 * 60 * 60 * 24);
+
+  return daysDiff <= 3;
+};
+
+export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, accounts, activeAccountId }) => {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [groupBy, setGroupBy] = useState<'category' | 'description'>('category');
   const [showIncome, setShowIncome] = useState(false);
   const [groupSimilar, setGroupSimilar] = useState(true);
   const [merchantMappings, setMerchantMappings] = useState<MerchantMapping[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([activeAccountId]);
+  const [excludeTransfers, setExcludeTransfers] = useState(true);
 
   // Load merchant mappings on mount
   useEffect(() => {
     setMerchantMappings(loadMerchantMappings());
   }, []);
 
-  // Filter transactions by date range and exclude projected
+  // Update selected accounts when active account changes
+  useEffect(() => {
+    setSelectedAccountIds([activeAccountId]);
+  }, [activeAccountId]);
+
+  // Toggle account selection
+  const toggleAccount = (accountId: string) => {
+    setSelectedAccountIds(prev =>
+      prev.includes(accountId)
+        ? prev.filter(id => id !== accountId)
+        : [...prev, accountId]
+    );
+  };
+
+  // Select all accounts
+  const selectAllAccounts = () => {
+    setSelectedAccountIds(accounts.map(a => a.id));
+  };
+
+  // Clear account selection
+  const clearAccountSelection = () => {
+    setSelectedAccountIds([]);
+  };
+
+  // Filter transactions by date range, accounts, and exclude projected
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    // First filter by selected accounts
+    let filtered = transactions.filter(t =>
+      selectedAccountIds.length === 0 || selectedAccountIds.includes(t.accountId || '')
+    );
+
+    // Detect and exclude transfers if enabled
+    if (excludeTransfers && selectedAccountIds.length > 1) {
+      const transferIds = new Set<string>();
+
+      // Find matching transfer pairs
+      for (let i = 0; i < filtered.length; i++) {
+        if (transferIds.has(filtered[i].id)) continue;
+
+        for (let j = i + 1; j < filtered.length; j++) {
+          if (transferIds.has(filtered[j].id)) continue;
+
+          if (areTransfersMatching(filtered[i], filtered[j])) {
+            transferIds.add(filtered[i].id);
+            transferIds.add(filtered[j].id);
+            break;
+          }
+        }
+      }
+
+      // Exclude identified transfers
+      filtered = filtered.filter(t => !transferIds.has(t.id));
+    }
+
+    // Apply other filters
+    return filtered.filter(t => {
       // Exclude projected transactions
       if (t.description.includes('(Projected)')) return false;
 
@@ -159,7 +235,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
 
       return true;
     });
-  }, [transactions, dateFrom, dateTo, showIncome]);
+  }, [transactions, selectedAccountIds, excludeTransfers, dateFrom, dateTo, showIncome]);
 
   // Group transactions by category or description
   const groupedData = useMemo(() => {
@@ -254,6 +330,61 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
             </select>
           </div>
         </div>
+
+        {/* Account Selection */}
+        {accounts.length > 1 && (
+          <div className="pt-4 border-t border-gray-700">
+            <h4 className="text-sm font-medium text-gray-300 mb-3">Accounts to Analyze</h4>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {accounts.map(account => (
+                <button
+                  key={account.id}
+                  onClick={() => toggleAccount(account.id)}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                    selectedAccountIds.includes(account.id)
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                  }`}
+                >
+                  {account.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={selectAllAccounts}
+                className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+              >
+                Select All
+              </button>
+              <button
+                onClick={clearAccountSelection}
+                className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+
+            {/* Transfer Exclusion Toggle */}
+            {selectedAccountIds.length > 1 && (
+              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-600">
+                <input
+                  type="checkbox"
+                  id="excludeTransfers"
+                  checked={excludeTransfers}
+                  onChange={(e) => setExcludeTransfers(e.target.checked)}
+                  className="w-4 h-4 bg-gray-700 border-gray-600 rounded focus:ring-2 focus:ring-blue-500"
+                />
+                <label htmlFor="excludeTransfers" className="text-sm text-gray-300">
+                  Exclude inter-account transfers
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    Automatically detects and excludes matching transfers between selected accounts
+                  </span>
+                </label>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Group Similar Merchants Toggle */}
         {groupBy === 'description' && (
