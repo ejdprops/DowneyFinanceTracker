@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { CSVImport } from './components/CSVImport';
 import { JSONImport } from './components/JSONImport';
 import { TransactionRegister } from './components/TransactionRegister';
@@ -101,29 +101,39 @@ function App() {
     saveDismissedProjections(dismissedProjections);
   }, [dismissedProjections]);
 
-  // Get active account
-  const account = accounts.find(a => a.id === activeAccountId) || null;
+  // Get active account - memoized
+  const account = useMemo(
+    () => accounts.find(a => a.id === activeAccountId) || null,
+    [accounts, activeAccountId]
+  );
 
-  // Filter transactions and bills for active account
-  const accountTransactions = transactions.filter(t => t.accountId === activeAccountId);
-  const accountRecurringBills = recurringBills.filter(b => b.accountId === activeAccountId);
+  // Filter transactions and bills for active account - memoized
+  const accountTransactions = useMemo(
+    () => transactions.filter(t => t.accountId === activeAccountId),
+    [transactions, activeAccountId]
+  );
 
-  // Account management handlers
-  const handleSelectAccount = (accountId: string) => {
+  const accountRecurringBills = useMemo(
+    () => recurringBills.filter(b => b.accountId === activeAccountId),
+    [recurringBills, activeAccountId]
+  );
+
+  // Account management handlers - memoized with useCallback
+  const handleSelectAccount = useCallback((accountId: string) => {
     setActiveAccountId(accountId);
-  };
+  }, []);
 
-  const handleAddAccount = (accountData: Omit<Account, 'id'>) => {
+  const handleAddAccount = useCallback((accountData: Omit<Account, 'id'>) => {
     const newAccount: Account = {
       ...accountData,
       id: `account-${Date.now()}`,
     };
-    setAccounts([...accounts, newAccount]);
-  };
+    setAccounts(prev => [...prev, newAccount]);
+  }, []);
 
-  const handleUpdateAccount = (updatedAccount: Account) => {
-    setAccounts(accounts.map(a => a.id === updatedAccount.id ? updatedAccount : a));
-  };
+  const handleUpdateAccount = useCallback((updatedAccount: Account) => {
+    setAccounts(prev => prev.map(a => a.id === updatedAccount.id ? updatedAccount : a));
+  }, []);
 
   const handleDeleteAccount = (accountId: string) => {
     // Remove all transactions for this account
@@ -326,11 +336,11 @@ function App() {
     setDebts(data.debts);
   };
 
-  const handleFolderSelected = (dirHandle: any, folderPath: string) => {
+  const handleFolderSelected = useCallback((dirHandle: any, folderPath: string) => {
     setICloudDirHandle(dirHandle);
     setICloudFolderPath(folderPath);
     saveICloudFolderPath(folderPath);
-  };
+  }, []);
 
   const handleQuickSync = async () => {
     if (!iCloudDirHandle) {
@@ -379,45 +389,47 @@ function App() {
     alert(`Balance updated to $${newBalance.toFixed(2)}\nAll transaction balances have been recalculated.`);
   };
 
-  // Get all transactions including projections for active account
-  const allTransactions = showProjections && account
-    ? calculateBalances(
-        [...accountTransactions, ...generateProjections(accountRecurringBills, 60)
-          .filter(projection => {
-            // Filter out dismissed projections
-            if (dismissedProjections.has(projection.id)) {
-              return false;
-            }
+  // Get all transactions including projections for active account - memoized
+  const allTransactions = useMemo(() => {
+    if (!showProjections || !account) {
+      return calculateBalances(accountTransactions, account?.availableBalance || 0);
+    }
 
-            // Filter out projected transactions that match existing manual transactions
-            const projectionDate = projection.date.toDateString();
-            const projectionDesc = projection.description.replace(' (Projected)', '');
-            return !accountTransactions.some(t =>
-              t.date.toDateString() === projectionDate &&
-              t.description.toLowerCase() === projectionDesc.toLowerCase()
-            );
-          })
-          .map(projection => {
-            // Apply stored state for this specific projection (visibility, reconciled, pending, etc.)
-            const storedState = projectedState.get(projection.id);
-            return {
-              ...projection,
-              // Apply stored state if it exists, otherwise use defaults
-              isProjectedVisible: storedState?.isProjectedVisible !== undefined
-                ? storedState.isProjectedVisible
-                : (projectedVisibility.has(projection.id) ? projectedVisibility.get(projection.id)! : true),
-              isReconciled: storedState?.isReconciled || false,
-              isPending: storedState?.isPending !== undefined ? storedState.isPending : true,
-            };
-          })
-        ],
-        account.availableBalance
-      )
-    : calculateBalances(accountTransactions, account?.availableBalance || 0);
+    const projections = generateProjections(accountRecurringBills, 60)
+      .filter(projection => {
+        // Filter out dismissed projections
+        if (dismissedProjections.has(projection.id)) {
+          return false;
+        }
+
+        // Filter out projected transactions that match existing manual transactions
+        const projectionDate = projection.date.toDateString();
+        const projectionDesc = projection.description.replace(' (Projected)', '');
+        return !accountTransactions.some(t =>
+          t.date.toDateString() === projectionDate &&
+          t.description.toLowerCase() === projectionDesc.toLowerCase()
+        );
+      })
+      .map(projection => {
+        // Apply stored state for this specific projection (visibility, reconciled, pending, etc.)
+        const storedState = projectedState.get(projection.id);
+        return {
+          ...projection,
+          // Apply stored state if it exists, otherwise use defaults
+          isProjectedVisible: storedState?.isProjectedVisible !== undefined
+            ? storedState.isProjectedVisible
+            : (projectedVisibility.has(projection.id) ? projectedVisibility.get(projection.id)! : true),
+          isReconciled: storedState?.isReconciled || false,
+          isPending: storedState?.isPending !== undefined ? storedState.isPending : true,
+        };
+      });
+
+    return calculateBalances([...accountTransactions, ...projections], account.availableBalance);
+  }, [showProjections, account, accountTransactions, accountRecurringBills, dismissedProjections, projectedState, projectedVisibility]);
 
 
-  // Calculate current balance (most recent non-projected transaction)
-  const currentBalance = (() => {
+  // Calculate current balance (most recent non-projected transaction) - memoized
+  const currentBalance = useMemo(() => {
     // Filter out projected transactions and find the most recent actual transaction
     const actualTransactions = allTransactions.filter(t =>
       !t.description.includes('(Projected)')
@@ -429,15 +441,18 @@ function App() {
 
     // The last actual transaction in the list has the current balance
     return actualTransactions[actualTransactions.length - 1].balance;
-  })();
+  }, [allTransactions, account]);
 
-  // Calculate projected balance (last transaction including future)
-  const projectedBalance = allTransactions.length > 0
-    ? allTransactions[allTransactions.length - 1].balance
-    : account?.availableBalance || 0;
+  // Calculate projected balance (last transaction including future) - memoized
+  const projectedBalance = useMemo(
+    () => allTransactions.length > 0
+      ? allTransactions[allTransactions.length - 1].balance
+      : account?.availableBalance || 0,
+    [allTransactions, account]
+  );
 
-  // Calculate next statement due date for credit cards
-  const getNextDueDate = (dueDay: number): Date => {
+  // Calculate next statement due date for credit cards - memoized
+  const getNextDueDate = useCallback((dueDay: number): Date => {
     const today = new Date();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
@@ -455,7 +470,7 @@ function App() {
     }
 
     return new Date(dueYear, dueMonth, dueDay);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
