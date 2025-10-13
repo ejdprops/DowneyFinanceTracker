@@ -142,12 +142,37 @@ const areTransfersMatching = (t1: Transaction, t2: Transaction): boolean => {
 export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, accounts, activeAccountId }) => {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [groupBy, setGroupBy] = useState<'category' | 'description'>('category');
   const [showIncome, setShowIncome] = useState(false);
   const [groupSimilar, setGroupSimilar] = useState(true);
   const [merchantMappings, setMerchantMappings] = useState<MerchantMapping[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([activeAccountId]);
   const [excludeTransfers, setExcludeTransfers] = useState(true);
+
+  // Handle month selection - auto-populate from/to dates
+  const handleMonthChange = (monthValue: string) => {
+    setSelectedMonth(monthValue);
+    if (monthValue) {
+      const [year, month] = monthValue.split('-');
+      const firstDay = `${year}-${month}-01`;
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      const lastDayFormatted = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+      setDateFrom(firstDay);
+      setDateTo(lastDayFormatted);
+    }
+  };
+
+  // Clear month selection if user manually changes date range
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    setSelectedMonth('');
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    setSelectedMonth('');
+  };
 
   // Load merchant mappings on mount
   useEffect(() => {
@@ -288,13 +313,28 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
       {/* Filters */}
       <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
         <h3 className="text-lg font-semibold text-white mb-4">Filters</h3>
+
+        {/* Quick Month Selector */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-400 mb-2">Quick Select Month</label>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => handleMonthChange(e.target.value)}
+            className="w-full md:w-64 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Select a month to automatically set the date range, or use custom dates below
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-2">From Date</label>
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => handleDateFromChange(e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -303,7 +343,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => handleDateToChange(e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
