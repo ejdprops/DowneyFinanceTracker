@@ -29,6 +29,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     availableBalance: 0,
     creditLimit: undefined as number | undefined,
     apr: undefined as number | undefined,
+    statementDueDate: undefined as number | undefined,
   });
 
   const resetForm = () => {
@@ -41,6 +42,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       availableBalance: 0,
       creditLimit: undefined,
       apr: undefined,
+      statementDueDate: undefined,
     });
     setEditingAccount(null);
     setShowAddForm(false);
@@ -57,6 +59,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       availableBalance: account.availableBalance,
       creditLimit: account.creditLimit,
       apr: account.apr,
+      statementDueDate: account.statementDueDate,
     });
     setShowAddForm(true);
   };
@@ -71,6 +74,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         routingNumber: formData.accountType === 'credit_card' ? undefined : formData.routingNumber,
         creditLimit: formData.accountType === 'credit_card' ? formData.creditLimit : undefined,
         apr: formData.accountType === 'credit_card' ? formData.apr : undefined,
+        statementDueDate: formData.accountType === 'credit_card' ? formData.statementDueDate : undefined,
       });
     } else {
       onAddAccount({
@@ -78,6 +82,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         routingNumber: formData.accountType === 'credit_card' ? undefined : formData.routingNumber,
         creditLimit: formData.accountType === 'credit_card' ? formData.creditLimit : undefined,
         apr: formData.accountType === 'credit_card' ? formData.apr : undefined,
+        statementDueDate: formData.accountType === 'credit_card' ? formData.statementDueDate : undefined,
       });
     }
 
@@ -294,6 +299,18 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
                       onChange={(e) => setFormData({ ...formData, apr: e.target.value ? parseFloat(e.target.value) : undefined })}
                       className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-xl text-white"
                       placeholder="19.99"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Statement Due Date (Day of Month)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formData.statementDueDate || ''}
+                      onChange={(e) => setFormData({ ...formData, statementDueDate: e.target.value ? parseInt(e.target.value) : undefined })}
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-xl text-white"
+                      placeholder="15"
                     />
                   </div>
                 </>

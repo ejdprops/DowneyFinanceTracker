@@ -436,6 +436,27 @@ function App() {
     ? allTransactions[allTransactions.length - 1].balance
     : account?.availableBalance || 0;
 
+  // Calculate next statement due date for credit cards
+  const getNextDueDate = (dueDay: number): Date => {
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const currentDay = today.getDate();
+
+    // If the due day hasn't passed this month, use this month
+    // Otherwise use next month
+    let dueMonth = currentDay <= dueDay ? currentMonth : currentMonth + 1;
+    let dueYear = currentYear;
+
+    // Handle year rollover
+    if (dueMonth > 11) {
+      dueMonth = 0;
+      dueYear++;
+    }
+
+    return new Date(dueYear, dueMonth, dueDay);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Sticky Header - Reduced by ~30% */}
@@ -507,11 +528,21 @@ function App() {
                       <p className={`text-2xl font-bold ${currentBalance > 0 ? 'text-red-400' : 'text-green-400'}`}>
                         {currentBalance > 0 ? '-' : ''}${Math.abs(currentBalance).toFixed(2)}
                       </p>
-                      {account.apr && (
-                        <p className="text-[10px] text-gray-400 mt-0.5">
-                          APR: {account.apr}%
-                        </p>
-                      )}
+                      <div className="flex items-center justify-end gap-2 mt-0.5">
+                        {account.apr && (
+                          <p className="text-[10px] text-gray-400">
+                            APR: {account.apr}%
+                          </p>
+                        )}
+                        {account.statementDueDate && (
+                          <>
+                            {account.apr && <span className="text-gray-600">•</span>}
+                            <p className="text-[10px] text-orange-400">
+                              Due: {getNextDueDate(account.statementDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </p>
+                          </>
+                        )}
+                      </div>
                     </div>
                     {account.creditLimit && (
                       <div className="grid grid-cols-2 gap-2 text-xs">
