@@ -357,10 +357,13 @@ const parseAppleCardRow = (row: any, index: number, dateCounts?: Map<string, num
     throw new Error('Invalid amount format');
   }
 
-  // Normalize amount: Purchases/Installments should be negative (money spent), Payments should be positive (money added)
+  // Normalize amount: Purchases/Installments/Interest/Other should be negative (money spent/owed), Payments should be positive (money added)
   // Apple Card CSV shows purchases as positive, so we need to invert them
-  if (type && (type.toLowerCase().includes('purchase') || type.toLowerCase().includes('installment'))) {
-    amount = -Math.abs(amount); // Make purchases and installments negative (charges)
+  if (type && (type.toLowerCase().includes('purchase') ||
+               type.toLowerCase().includes('installment') ||
+               type.toLowerCase().includes('interest') ||
+               type.toLowerCase().includes('other'))) {
+    amount = -Math.abs(amount); // Make purchases, installments, interest, and other charges negative
   } else if (type && (type.toLowerCase().includes('payment') || type.toLowerCase().includes('refund'))) {
     amount = Math.abs(amount); // Make payments/refunds positive
   }

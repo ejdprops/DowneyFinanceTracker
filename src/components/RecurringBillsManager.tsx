@@ -51,7 +51,9 @@ export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
         comparison = freqOrder[a.frequency] - freqOrder[b.frequency];
         break;
       case 'nextDueDate':
-        comparison = a.nextDueDate.getTime() - b.nextDueDate.getTime();
+        const aTime = a.nextDueDate instanceof Date ? a.nextDueDate.getTime() : 0;
+        const bTime = b.nextDueDate instanceof Date ? b.nextDueDate.getTime() : 0;
+        comparison = aTime - bTime;
         break;
       case 'dayOfMonth':
         const aDay = a.dayOfMonth || 999;
@@ -251,7 +253,11 @@ const BillRow: React.FC<BillRowProps> = ({ bill, onEdit, onToggleActive, onDelet
         <span className="text-gray-300">{formatFrequency(bill.frequency)}</span>
       </td>
       <td className="px-4 py-3">
-        <span className="text-gray-300">{bill.nextDueDate.toLocaleDateString()}</span>
+        <span className="text-gray-300">
+          {bill.nextDueDate instanceof Date && !isNaN(bill.nextDueDate.getTime())
+            ? bill.nextDueDate.toLocaleDateString()
+            : 'Invalid Date'}
+        </span>
       </td>
       <td className="px-4 py-3">
         <span className="text-gray-300">{getDaySchedule()}</span>

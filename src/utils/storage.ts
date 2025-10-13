@@ -72,13 +72,31 @@ export const loadRecurringBills = (): RecurringBill[] => {
   if (!data) return [];
 
   const parsed = JSON.parse(data);
-  return parsed.map((b: any) => ({
-    ...b,
-    // Force local timezone to avoid date shift issues
-    nextDueDate: typeof b.nextDueDate === 'string' && b.nextDueDate.includes('-')
-      ? new Date(b.nextDueDate + 'T00:00:00')
-      : new Date(b.nextDueDate),
-  }));
+  return parsed.map((b: any) => {
+    let nextDueDate: Date;
+
+    if (typeof b.nextDueDate === 'string') {
+      // If it's a string in YYYY-MM-DD format, append time to force local timezone
+      if (b.nextDueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        nextDueDate = new Date(b.nextDueDate + 'T00:00:00');
+      } else if (b.nextDueDate.includes('T')) {
+        // If it has time info, extract just the date part and force local timezone
+        const dateOnly = b.nextDueDate.split('T')[0];
+        nextDueDate = new Date(dateOnly + 'T00:00:00');
+      } else {
+        // Fallback to normal Date constructor
+        nextDueDate = new Date(b.nextDueDate);
+      }
+    } else {
+      // If it's already a date object (shouldn't happen in JSON), use it directly
+      nextDueDate = new Date(b.nextDueDate);
+    }
+
+    return {
+      ...b,
+      nextDueDate,
+    };
+  });
 };
 
 // Debts
