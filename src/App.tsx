@@ -9,6 +9,7 @@ import { DebtsTracker } from './components/DebtsTracker';
 import { ICloudSync } from './components/ICloudSync';
 import { AccountSelector } from './components/AccountSelector';
 import { AccountManagement } from './components/AccountManagement';
+import { SpendingCharts } from './components/SpendingCharts';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
@@ -21,18 +22,22 @@ import {
   saveDebts,
   loadDebts,
   migrateToMultiAccount,
+  saveDismissedProjections,
+  loadDismissedProjections,
 } from './utils/storage';
 import { generateProjections, calculateBalances } from './utils/projections';
 
 function App() {
-  const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'debts' | 'sync'>('account');
+  const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'debts' | 'sync'>('account');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string>('');
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
-  const [showProjections, setShowProjections] = useState(true);
+  const [showProjections, setShowProjections] = useState(false);
   const [dismissedProjections, setDismissedProjections] = useState<Set<string>>(new Set());
+  const [projectedVisibility, setProjectedVisibility] = useState<Map<string, boolean>>(new Map());
+  const [projectedState, setProjectedState] = useState<Map<string, Partial<Transaction>>>(new Map());
   const [showAccountManagement, setShowAccountManagement] = useState(false);
 
   // Load data on mount
@@ -42,12 +47,14 @@ function App() {
     const savedActiveAccountId = loadActiveAccountId();
     const loadedBills = loadRecurringBills();
     const loadedDebts = loadDebts();
+    const loadedDismissedProjections = loadDismissedProjections();
 
     setTransactions(loadedTransactions);
     setAccounts(migratedAccounts);
     setActiveAccountId(savedActiveAccountId || migratedAccounts[0]?.id || '');
     setRecurringBills(loadedBills);
     setDebts(loadedDebts);
+    setDismissedProjections(loadedDismissedProjections);
   }, []);
 
   // Save data when it changes
@@ -80,6 +87,10 @@ function App() {
       saveDebts(debts);
     }
   }, [debts]);
+
+  useEffect(() => {
+    saveDismissedProjections(dismissedProjections);
+  }, [dismissedProjections]);
 
   // Get active account
   const account = accounts.find(a => a.id === activeAccountId) || null;
@@ -119,13 +130,14 @@ function App() {
     }
   };
 
-  const handleImportComplete = (data: ParsedCSVData) => {
+  const handleImportComplete = (data: ParsedCSVData, currentBalance?: number) => {
     if (!activeAccountId) return;
 
     // Track duplicates and updates
     let newCount = 0;
     let updatedCount = 0;
     let skippedCount = 0;
+    let postedCount = 0; // Track pending->posted transitions
 
     const updatedTransactions = [...transactions];
 
@@ -133,18 +145,57 @@ function App() {
       // Add accountId to imported transaction
       const txWithAccount = { ...importedTx, accountId: activeAccountId };
 
-      // Check for existing transaction by date + description + amount + account
-      const existingIndex = updatedTransactions.findIndex(t =>
+      // Check for existing transaction by:
+      // 1. ID (exact match within same account)
+      // 2. Description + amount + account (duplicate detection - ignoring date for pending->posted)
+      const existingByIdIndex = updatedTransactions.findIndex(t =>
+        t.id === txWithAccount.id && t.accountId === activeAccountId
+      );
+
+      // For pending transactions that have posted, we need to match by description + amount only
+      // This allows us to find the same transaction even if the date changed
+      const existingPendingIndex = updatedTransactions.findIndex(t =>
         t.accountId === activeAccountId &&
-        t.date.toDateString() === txWithAccount.date.toDateString() &&
+        t.isPending && // Only match pending transactions
         t.description === txWithAccount.description &&
         Math.abs(t.amount - txWithAccount.amount) < 0.01 // Allow small floating point differences
       );
 
+      // Regular duplicate detection (same date + description + amount)
+      const existingByDataIndex = updatedTransactions.findIndex(t =>
+        t.accountId === activeAccountId &&
+        !t.isPending && // Don't match pending transactions here
+        t.date.toDateString() === txWithAccount.date.toDateString() &&
+        t.description === txWithAccount.description &&
+        Math.abs(t.amount - txWithAccount.amount) < 0.01
+      );
+
+      // Priority: ID match > Pending match > Data match
+      let existingIndex = -1;
+      let isPendingToPosted = false;
+
+      if (existingByIdIndex !== -1) {
+        existingIndex = existingByIdIndex;
+      } else if (existingPendingIndex !== -1 && !txWithAccount.isPending) {
+        // Pending transaction is now posted
+        existingIndex = existingPendingIndex;
+        isPendingToPosted = true;
+      } else if (existingByDataIndex !== -1) {
+        existingIndex = existingByDataIndex;
+      }
+
       if (existingIndex !== -1) {
         const existing = updatedTransactions[existingIndex];
-        // If existing was manual (user created from projected or added manually), update it
-        if (existing.isManual) {
+
+        if (isPendingToPosted) {
+          // Pending transaction has posted - update with new ID, date, and status
+          updatedTransactions[existingIndex] = {
+            ...txWithAccount,
+            isReconciled: existing.isReconciled, // Preserve reconciled status
+          };
+          postedCount++;
+        } else if (existing.isManual) {
+          // If existing was manual (user created from projected or added manually), update it
           updatedTransactions[existingIndex] = {
             ...txWithAccount,
             isReconciled: existing.isReconciled, // Preserve reconciled status
@@ -163,16 +214,20 @@ function App() {
 
     setTransactions(updatedTransactions);
 
+    // Update account balance if provided
+    if (currentBalance !== undefined && account) {
+      const updatedAccount = { ...account, availableBalance: currentBalance };
+      handleUpdateAccount(updatedAccount);
+    }
+
     if (data.errors.length > 0) {
       alert(`Import completed with ${data.errors.length} errors. Check console for details.`);
       console.error('Import errors:', data.errors);
     } else {
-      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}`);
+      const balanceMsg = currentBalance !== undefined ? `\nBalance updated to: $${currentBalance.toFixed(2)}` : '';
+      const postedMsg = postedCount > 0 ? `\nPending→Posted: ${postedCount}` : '';
+      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}${postedMsg}${balanceMsg}`);
     }
-
-    // Note: We do NOT update the account balance from imported transactions
-    // The account.availableBalance represents the CURRENT balance
-    // Imported transactions have historical balances that may be old
   };
 
   const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'accountId'>) => {
@@ -190,7 +245,24 @@ function App() {
   };
 
   const handleUpdateTransaction = (transaction: Transaction) => {
-    setTransactions(transactions.map(t => t.id === transaction.id ? transaction : t));
+    // If it's a projected transaction (id starts with 'proj-'), store all state separately
+    if (transaction.id.startsWith('proj-')) {
+      const newVisibility = new Map(projectedVisibility);
+      newVisibility.set(transaction.id, transaction.isProjectedVisible !== false);
+      setProjectedVisibility(newVisibility);
+
+      // Store all other state changes (reconciled, pending, etc.) for this specific projection
+      const newState = new Map(projectedState);
+      newState.set(transaction.id, {
+        isReconciled: transaction.isReconciled,
+        isPending: transaction.isPending,
+        isProjectedVisible: transaction.isProjectedVisible,
+      });
+      setProjectedState(newState);
+    } else {
+      // Regular transaction - update in transactions array
+      setTransactions(transactions.map(t => t.id === transaction.id ? transaction : t));
+    }
   };
 
   const handleDismissProjection = (projectionId: string) => {
@@ -245,76 +317,153 @@ function App() {
     setDebts(data.debts);
   };
 
+  const handleAdjustBalance = () => {
+    if (!account) return;
+
+    const currentBalanceStr = prompt(
+      `Enter the current balance shown in your bank's app:\n\n` +
+      `Current calculated balance: $${currentBalance.toFixed(2)}\n\n` +
+      `This will update the account balance and recalculate all transaction balances.`
+    );
+
+    if (currentBalanceStr === null) return; // User cancelled
+
+    const newBalance = parseFloat(currentBalanceStr.replace(/[$,]/g, ''));
+
+    if (isNaN(newBalance)) {
+      alert('Please enter a valid balance amount');
+      return;
+    }
+
+    // Update the account's available balance
+    const updatedAccount = { ...account, availableBalance: newBalance };
+    handleUpdateAccount(updatedAccount);
+
+    alert(`Balance updated to $${newBalance.toFixed(2)}\nAll transaction balances have been recalculated.`);
+  };
+
   // Get all transactions including projections for active account
   const allTransactions = showProjections && account
     ? calculateBalances(
-        [...accountTransactions, ...generateProjections(accountRecurringBills, 60).filter(projection => {
-          // Filter out dismissed projections
-          if (dismissedProjections.has(projection.id)) {
-            return false;
-          }
+        [...accountTransactions, ...generateProjections(accountRecurringBills, 60)
+          .filter(projection => {
+            // Filter out dismissed projections
+            if (dismissedProjections.has(projection.id)) {
+              return false;
+            }
 
-          // Filter out projected transactions that match existing manual transactions
-          const projectionDate = projection.date.toDateString();
-          const projectionDesc = projection.description.replace(' (Projected)', '');
-          return !accountTransactions.some(t =>
-            t.date.toDateString() === projectionDate &&
-            t.description.toLowerCase() === projectionDesc.toLowerCase()
-          );
-        })],
+            // Filter out projected transactions that match existing manual transactions
+            const projectionDate = projection.date.toDateString();
+            const projectionDesc = projection.description.replace(' (Projected)', '');
+            return !accountTransactions.some(t =>
+              t.date.toDateString() === projectionDate &&
+              t.description.toLowerCase() === projectionDesc.toLowerCase()
+            );
+          })
+          .map(projection => {
+            // Apply stored state for this specific projection (visibility, reconciled, pending, etc.)
+            const storedState = projectedState.get(projection.id);
+            return {
+              ...projection,
+              // Apply stored state if it exists, otherwise use defaults
+              isProjectedVisible: storedState?.isProjectedVisible !== undefined
+                ? storedState.isProjectedVisible
+                : (projectedVisibility.has(projection.id) ? projectedVisibility.get(projection.id)! : true),
+              isReconciled: storedState?.isReconciled || false,
+              isPending: storedState?.isPending !== undefined ? storedState.isPending : true,
+            };
+          })
+        ],
         account.availableBalance
       )
     : calculateBalances(accountTransactions, account?.availableBalance || 0);
 
 
-  // Calculate projected balance
+  // Calculate current balance (most recent non-projected transaction)
+  const currentBalance = (() => {
+    // Filter out projected transactions and find the most recent actual transaction
+    const actualTransactions = allTransactions.filter(t =>
+      !t.description.includes('(Projected)')
+    );
+
+    if (actualTransactions.length === 0) {
+      return account?.availableBalance || 0;
+    }
+
+    // The last actual transaction in the list has the current balance
+    return actualTransactions[actualTransactions.length - 1].balance;
+  })();
+
+  // Calculate projected balance (last transaction including future)
   const projectedBalance = allTransactions.length > 0
     ? allTransactions[allTransactions.length - 1].balance
     : account?.availableBalance || 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl shadow-2xl p-8 mb-6 border border-gray-700">
-          <div className="mb-6">
-            <AccountSelector
-              accounts={accounts}
-              activeAccountId={activeAccountId}
-              onSelectAccount={handleSelectAccount}
-              onManageAccounts={() => setShowAccountManagement(true)}
-            />
-          </div>
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-white">{account?.name || 'No Account'}</h1>
-              <p className="text-gray-400 mt-2 flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-green-400"></span>
-                {account?.institution} •••• {account?.accountNumber.slice(-4)}
-              </p>
+      {/* Sticky Header - Reduced by ~30% */}
+      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
+        <div className="max-w-7xl mx-auto px-3">
+          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
+            <div className="mb-3">
+              <AccountSelector
+                accounts={accounts}
+                activeAccountId={activeAccountId}
+                onSelectAccount={handleSelectAccount}
+                onManageAccounts={() => setShowAccountManagement(true)}
+              />
             </div>
-            <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-6 py-4 rounded-2xl border border-blue-500/30">
-              <p className="text-sm text-gray-400 mb-1">
-                {account?.accountType === 'credit_card' ? 'Balance' : 'Available'}
-              </p>
-              <p className="text-4xl font-bold text-white">
-                ${account?.availableBalance.toFixed(2) || '0.00'}
-              </p>
-              {account?.accountType === 'credit_card' && account?.creditLimit && (
-                <p className="text-xs text-gray-400 mt-1">
-                  Limit: ${account.creditLimit.toLocaleString()}
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-xl font-bold text-white">{account?.name || 'No Account'}</h1>
+                <p className="text-gray-400 text-xs mt-1 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                  {account?.institution} •••• {account?.accountNumber.slice(-4)}
                 </p>
-              )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAdjustBalance}
+                  className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium text-sm"
+                  title="Adjust balance to match your bank"
+                >
+                  Adjust Balance
+                </button>
+                <div className="flex items-center gap-2 bg-gray-700/50 px-3 py-1.5 rounded-lg border border-gray-600">
+                  <input
+                    type="checkbox"
+                    id="showProjectionsHeader"
+                    checked={showProjections}
+                    onChange={(e) => setShowProjections(e.target.checked)}
+                    className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
+                  />
+                  <label htmlFor="showProjectionsHeader" className="text-gray-300 text-sm font-medium cursor-pointer">
+                    Show Projected
+                  </label>
+                </div>
+                <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-4 py-2 rounded-xl border border-blue-500/30">
+                  <p className="text-xs text-gray-400 mb-0.5">
+                    {account?.accountType === 'credit_card' ? 'Balance' : 'Current Balance'}
+                  </p>
+                  <p className="text-2xl font-bold text-white">
+                    ${currentBalance.toFixed(2)}
+                  </p>
+                  {account?.accountType === 'credit_card' && account?.creditLimit && (
+                    <p className="text-[10px] text-gray-400 mt-0.5">
+                      Limit: ${account.creditLimit.toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Tabs */}
-        <div className="bg-gray-800 rounded-3xl shadow-2xl mb-6 border border-gray-700">
-          <nav className="flex gap-2 p-3">
+            {/* Tabs Navigation */}
+            <div className="mt-3 pt-3 border-t border-gray-700">
+              <nav className="flex gap-1.5">
+
             <button
               onClick={() => setCurrentTab('account')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'account'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -324,7 +473,7 @@ function App() {
             </button>
             <button
               onClick={() => setCurrentTab('register')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'register'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -334,7 +483,7 @@ function App() {
             </button>
             <button
               onClick={() => setCurrentTab('recurring')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'recurring'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -344,7 +493,7 @@ function App() {
             </button>
             <button
               onClick={() => setCurrentTab('projections')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'projections'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -353,8 +502,18 @@ function App() {
               Projections
             </button>
             <button
+              onClick={() => setCurrentTab('charts')}
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
+                currentTab === 'charts'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              Spending Charts
+            </button>
+            <button
               onClick={() => setCurrentTab('debts')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'debts'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -364,7 +523,7 @@ function App() {
             </button>
             <button
               onClick={() => setCurrentTab('sync')}
-              className={`px-6 py-3 font-medium rounded-2xl transition-all ${
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'sync'
                   ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700'
@@ -372,10 +531,15 @@ function App() {
             >
               iCloud Sync
             </button>
-          </nav>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
 
-          {/* Tab Content */}
-          <div className="p-6">
+      {/* Tab Content */}
+      <div className="max-w-7xl mx-auto px-3 pb-5">
+        <div className="bg-gray-800 rounded-2xl shadow-xl p-4 border border-gray-700">
             {/* Account Info Tab */}
             {currentTab === 'account' && (
               <div className="space-y-6">
@@ -385,7 +549,7 @@ function App() {
                   <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30 backdrop-blur-sm">
                     <h3 className="text-sm font-medium text-blue-300 mb-2">Current Balance</h3>
                     <p className="text-3xl font-bold text-white">
-                      ${account?.availableBalance.toFixed(2)}
+                      ${currentBalance.toFixed(2)}
                     </p>
                   </div>
                   <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl p-6 border border-green-500/30 backdrop-blur-sm">
@@ -432,18 +596,6 @@ function App() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-gray-800/50 rounded-2xl p-4 border border-gray-700">
-                  <input
-                    type="checkbox"
-                    id="showProjections"
-                    checked={showProjections}
-                    onChange={(e) => setShowProjections(e.target.checked)}
-                    className="h-5 w-5 text-blue-500 rounded bg-gray-700 border-gray-600"
-                  />
-                  <label htmlFor="showProjections" className="text-gray-300 font-medium">
-                    Show projected transactions from recurring bills
-                  </label>
-                </div>
               </div>
             )}
 
@@ -485,6 +637,13 @@ function App() {
               />
             )}
 
+            {/* Spending Charts Tab */}
+            {currentTab === 'charts' && (
+              <SpendingCharts
+                transactions={accountTransactions}
+              />
+            )}
+
             {/* Debts Tab */}
             {currentTab === 'debts' && (
               <DebtsTracker
@@ -509,17 +668,16 @@ function App() {
           </div>
         </div>
 
-        {/* Account Management Modal */}
-        {showAccountManagement && (
-          <AccountManagement
-            accounts={accounts}
-            onAddAccount={handleAddAccount}
-            onUpdateAccount={handleUpdateAccount}
-            onDeleteAccount={handleDeleteAccount}
-            onClose={() => setShowAccountManagement(false)}
-          />
-        )}
-      </div>
+      {/* Account Management Modal */}
+      {showAccountManagement && (
+        <AccountManagement
+          accounts={accounts}
+          onAddAccount={handleAddAccount}
+          onUpdateAccount={handleUpdateAccount}
+          onDeleteAccount={handleDeleteAccount}
+          onClose={() => setShowAccountManagement(false)}
+        />
+      )}
     </div>
   );
 }

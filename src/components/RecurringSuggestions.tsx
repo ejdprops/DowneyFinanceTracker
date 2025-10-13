@@ -193,7 +193,7 @@ const EditSuggestionModal: React.FC<EditSuggestionModalProps> = ({ suggestion, o
       amount: finalAmount,
       frequency: formData.frequency,
       dayOfMonth: formData.dayOfMonth ? parseInt(formData.dayOfMonth) : undefined,
-      nextDueDate: new Date(formData.nextDueDate),
+      nextDueDate: new Date(formData.nextDueDate + 'T00:00:00'), // Force local timezone
       isActive: true,
     });
   };

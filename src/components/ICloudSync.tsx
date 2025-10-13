@@ -7,6 +7,7 @@ import {
   exportData,
   importData,
 } from '../utils/icloudStorage';
+import { fixRecurringBillTimezones } from '../utils/fixTimezones';
 import type { Transaction, Account, RecurringBill, Debt } from '../types';
 
 interface ICloudSyncProps {
@@ -140,6 +141,17 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
     }
   };
 
+  const handleFixTimezones = () => {
+    const confirmed = confirm(
+      'This will fix timezone issues in recurring bill dates. This operation will update all recurring bills to ensure dates are in your local timezone. Continue?'
+    );
+    if (confirmed) {
+      const result = fixRecurringBillTimezones();
+      alert(`Fixed ${result.fixed} recurring bill dates. Please refresh the page to see the changes.`);
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -208,11 +220,15 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
           </div>
         </div>
       ) : (
-        <div className="bg-yellow-500/20 rounded-2xl p-6 border border-yellow-500/30">
-          <h3 className="text-lg font-semibold text-yellow-300 mb-2">Browser Not Supported</h3>
-          <p className="text-sm text-yellow-200">
-            Your browser doesn't support File System Access API. Please use Safari, Chrome, or Edge
-            for iCloud Drive integration, or use the manual export/import below.
+        <div className="bg-blue-500/20 rounded-2xl p-6 border border-blue-500/30">
+          <h3 className="text-lg font-semibold text-blue-300 mb-2">
+            📱 Mobile Device Detected
+          </h3>
+          <p className="text-sm text-blue-200 mb-3">
+            iCloud Drive integration requires the File System Access API, which is only available on desktop browsers.
+          </p>
+          <p className="text-sm text-blue-200">
+            <strong>On mobile:</strong> Use the manual export/import buttons below to save/load your data as JSON files to iCloud Drive or your device.
           </p>
         </div>
       )}
@@ -238,6 +254,20 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
             Import Data
           </button>
         </div>
+      </div>
+
+      {/* Fix Timezones Utility */}
+      <div className="bg-orange-500/20 rounded-2xl p-6 border border-orange-500/30">
+        <h3 className="text-lg font-semibold text-orange-300 mb-2">🔧 Fix Recurring Bill Dates</h3>
+        <p className="text-sm text-orange-200 mb-4">
+          If your recurring bills are showing dates that are one day off, click this button to fix timezone issues in your saved data.
+        </p>
+        <button
+          onClick={handleFixTimezones}
+          className="w-full px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-600 hover:to-red-600 transition-all font-medium"
+        >
+          Fix Timezone Issues
+        </button>
       </div>
 
       {/* Instructions */}

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Transaction, RecurringBill } from '../types';
+import { parseDate, formatDateForInput } from '../utils/dateUtils';
 
 interface TransactionRegisterProps {
   transactions: Transaction[];
@@ -23,28 +24,85 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [showPending, setShowPending] = useState(true);
-  const [editingAmount, setEditingAmount] = useState<string | null>(null);
-  const [editAmount, setEditAmount] = useState('');
+  const [showProjected, setShowProjected] = useState(true);
+  const [editingField, setEditingField] = useState<{id: string; field: 'date' | 'description' | 'category' | 'amount'} | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'description' | 'category' | 'amount'>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // Sort transactions (newest first)
-  // Use sortOrder if available (preserves CSV chronological order)
-  // Otherwise fall back to date sorting
-  const sortedTransactions = [...transactions].sort((a, b) => {
-    // If both have sortOrder, preserve CSV order (CSV is already newest-first)
-    if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
-      return a.sortOrder - b.sortOrder; // Lower sortOrder (earlier in CSV) = newer = show first
+  // Date range filters
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [showProjectionsThru, setShowProjectionsThru] = useState<string>('');
+
+  const handleSort = (field: 'date' | 'description' | 'category' | 'amount') => {
+    if (sortBy === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortDirection(field === 'date' || field === 'amount' ? 'desc' : 'asc');
     }
-    // Otherwise sort by date (newest first)
-    return b.date.getTime() - a.date.getTime();
+  };
+
+  // Sort transactions
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    let comparison = 0;
+
+    switch (sortBy) {
+      case 'date':
+        comparison = a.date.getTime() - b.date.getTime();
+        // If same date, sort by ID to preserve chronological order
+        if (comparison === 0) {
+          comparison = a.id.localeCompare(b.id);
+        }
+        break;
+      case 'description':
+        comparison = a.description.localeCompare(b.description);
+        break;
+      case 'category':
+        comparison = a.category.localeCompare(b.category);
+        break;
+      case 'amount':
+        comparison = a.amount - b.amount;
+        break;
+    }
+
+    return sortDirection === 'asc' ? comparison : -comparison;
   });
 
-  // Filter transactions by search term and pending toggle
+  // Filter transactions by search term, projected toggle, and date range
   const filteredTransactions = sortedTransactions.filter(t => {
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          t.category.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPending = showPending || !t.isPending;
-    return matchesSearch && matchesPending;
+    // Filter projected transactions based on toggle (all CSV imports should always show)
+    const isProjectedTransaction = t.description.includes('(Projected)');
+    const matchesProjected = showProjected || !isProjectedTransaction;
+
+    // Date range filter
+    let matchesDateRange = true;
+    const txDate = new Date(t.date);
+    txDate.setHours(0, 0, 0, 0);
+
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      matchesDateRange = matchesDateRange && txDate >= fromDate;
+    }
+
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      matchesDateRange = matchesDateRange && txDate <= toDate;
+    }
+
+    // For projected transactions, also check showProjectionsThru date
+    if (t.description.includes('(Projected)') && showProjectionsThru) {
+      const thruDate = new Date(showProjectionsThru);
+      thruDate.setHours(23, 59, 59, 999);
+      matchesDateRange = matchesDateRange && txDate <= thruDate;
+    }
+
+    return matchesSearch && matchesProjected && matchesDateRange;
   });
 
   const handleToggleReconciled = (transaction: Transaction) => {
@@ -68,32 +126,76 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const handleToggleProjectedVisibility = (transaction: Transaction) => {
     onUpdateTransaction({
       ...transaction,
-      isProjectedVisible: transaction.isProjectedVisible === false ? true : false,
+      isProjectedVisible: !(transaction.isProjectedVisible !== false), // Toggle: true -> false, undefined/false -> true
     });
   };
 
-  const handleStartEditAmount = (transaction: Transaction) => {
-    setEditingAmount(transaction.id);
-    setEditAmount(Math.abs(transaction.amount).toString());
+  const handleStartEdit = (transaction: Transaction, field: 'date' | 'description' | 'category' | 'amount') => {
+    if (transaction.isReconciled) return; // Can't edit reconciled transactions
+
+    setEditingField({ id: transaction.id, field });
+
+    switch (field) {
+      case 'date':
+        setEditValue(formatDateForInput(transaction.date));
+        break;
+      case 'description':
+        setEditValue(transaction.description);
+        break;
+      case 'category':
+        setEditValue(transaction.category);
+        break;
+      case 'amount':
+        setEditValue(Math.abs(transaction.amount).toString());
+        break;
+    }
   };
 
-  const handleSaveAmount = (transaction: Transaction) => {
-    const newAmount = parseFloat(editAmount);
-    if (!isNaN(newAmount)) {
-      // Preserve the sign (debit/credit)
-      const signedAmount = transaction.amount < 0 ? -Math.abs(newAmount) : Math.abs(newAmount);
+  const handleSaveEdit = (transaction: Transaction) => {
+    if (!editingField) return;
+
+    let updates: Partial<Transaction> = {};
+
+    switch (editingField.field) {
+      case 'date':
+        const newDate = parseDate(editValue);
+        if (!isNaN(newDate.getTime())) {
+          updates.date = newDate;
+        }
+        break;
+      case 'description':
+        if (editValue.trim()) {
+          updates.description = editValue.trim();
+        }
+        break;
+      case 'category':
+        if (editValue.trim()) {
+          updates.category = editValue.trim();
+        }
+        break;
+      case 'amount':
+        const newAmount = parseFloat(editValue);
+        if (!isNaN(newAmount)) {
+          // Preserve the sign (debit/credit)
+          updates.amount = transaction.amount < 0 ? -Math.abs(newAmount) : Math.abs(newAmount);
+        }
+        break;
+    }
+
+    if (Object.keys(updates).length > 0) {
       onUpdateTransaction({
         ...transaction,
-        amount: signedAmount,
+        ...updates,
       });
     }
-    setEditingAmount(null);
-    setEditAmount('');
+
+    setEditingField(null);
+    setEditValue('');
   };
 
-  const handleCancelEditAmount = () => {
-    setEditingAmount(null);
-    setEditAmount('');
+  const handleCancelEdit = () => {
+    setEditingField(null);
+    setEditValue('');
   };
 
   const handleMarkAsProcessed = (transaction: Transaction) => {
@@ -111,6 +213,8 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
         isPending: true,
         isManual: true, // Mark as manual since user is manually processing it
       });
+      // Dismiss the projected transaction so it doesn't show up anymore
+      onDismissProjection(transaction.id);
     } else {
       // Otherwise just update the existing transaction
       onUpdateTransaction({
@@ -122,74 +226,149 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-white">Transaction History</h2>
+        <h2 className="text-xl font-bold text-white">Transaction History</h2>
         <button
           onClick={() => setShowAddForm(true)}
-          className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-xl hover:from-blue-600 hover:to-purple-600 transition-all shadow-lg font-medium"
+          className="px-3 py-1.5 text-sm bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all shadow-lg font-medium"
         >
           + Add Transaction
         </button>
       </div>
 
       {/* Search and Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            placeholder="Search by Description or Category..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search by Description or Category..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Toggle Pending */}
+          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
+            <span className="text-xs text-gray-300 whitespace-nowrap">Show Projected</span>
+            <button
+              onClick={() => setShowProjected(!showProjected)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                showProjected ? 'bg-blue-500' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  showProjected ? 'translate-x-5' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
-        {/* Toggle Pending */}
-        <div className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 border border-gray-700">
-          <span className="text-sm text-gray-300 whitespace-nowrap">Show Pending</span>
-          <button
-            onClick={() => setShowPending(!showPending)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              showPending ? 'bg-blue-500' : 'bg-gray-600'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                showPending ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
+        {/* Date Range Filters */}
+        <div className="flex gap-2 items-center bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-700">
+          <span className="text-xs text-gray-400 whitespace-nowrap">From:</span>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white"
+          />
+          <span className="text-xs text-gray-400 whitespace-nowrap">To:</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white"
+          />
+          <span className="text-xs text-gray-400 whitespace-nowrap ml-4">Show Projections Thru:</span>
+          <input
+            type="date"
+            value={showProjectionsThru}
+            onChange={(e) => setShowProjectionsThru(e.target.value)}
+            className="px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white"
+          />
+          {(dateFrom || dateTo || showProjectionsThru) && (
+            <button
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+                setShowProjectionsThru('');
+              }}
+              className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+              title="Clear date filters"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
       {/* Transactions Table */}
-      <div className="overflow-x-auto bg-gray-800 rounded-2xl shadow-2xl border border-gray-700">
+      <div className="overflow-x-auto bg-gray-800 rounded-xl shadow-xl border border-gray-700">
         <table className="w-full">
           <thead className="bg-gray-900/50 border-b border-gray-700">
             <tr>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">
+              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">
                 <span title="Reconciled">✓</span>
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Date</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Description</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Category</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Amount</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">Balance</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider">
+                ID
+              </th>
+              <th
+                className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-700/30 select-none"
+                onClick={() => handleSort('date')}
+              >
+                <div className="flex items-center gap-1">
+                  Date
+                  {sortBy === 'date' && <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </div>
+              </th>
+              <th
+                className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-700/30 select-none"
+                onClick={() => handleSort('description')}
+              >
+                <div className="flex items-center gap-1">
+                  Description
+                  {sortBy === 'description' && <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </div>
+              </th>
+              <th
+                className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-700/30 select-none"
+                onClick={() => handleSort('category')}
+              >
+                <div className="flex items-center gap-1">
+                  Category
+                  {sortBy === 'category' && <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </div>
+              </th>
+              <th
+                className="px-3 py-2 text-right text-[10px] font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-700/30 select-none"
+                onClick={() => handleSort('amount')}
+              >
+                <div className="flex items-center gap-1 justify-end">
+                  Amount
+                  {sortBy === 'amount' && <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                </div>
+              </th>
+              <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-300 uppercase tracking-wider">Balance</th>
+              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
             {filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   No transactions found. Import a CSV or add a manual transaction.
                 </td>
               </tr>
             ) : (
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-3 py-2 text-center">
                     <button
                       onClick={() => handleToggleReconciled(transaction)}
                       disabled={transaction.description.includes('(Projected)')}
@@ -213,12 +392,85 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                         : transaction.isReconciled && '✓'}
                     </button>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-white">
-                    {transaction.date.toLocaleDateString()}
+                  <td className="px-3 py-2 text-[10px] text-gray-500 font-mono truncate max-w-[120px]" title={transaction.id}>
+                    {transaction.id}
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-white">
+                    {editingField?.id === transaction.id && editingField.field === 'date' && !transaction.isReconciled ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="date"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit(transaction);
+                            if (e.key === 'Escape') handleCancelEdit();
+                          }}
+                          className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveEdit(transaction)}
+                          className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => !transaction.isReconciled && handleStartEdit(transaction, 'date')}
+                        className={`text-left w-full ${!transaction.isReconciled ? 'hover:bg-gray-700/50 rounded px-2 py-1 cursor-pointer' : 'cursor-default px-2 py-1'}`}
+                        disabled={transaction.isReconciled}
+                        title={transaction.isReconciled ? 'Cannot edit reconciled transaction' : 'Click to edit date'}
+                      >
+                        {transaction.date.toLocaleDateString()}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-white">
                     <div className="flex items-center gap-2">
-                      {transaction.description}
+                      {editingField?.id === transaction.id && editingField.field === 'description' && !transaction.isReconciled ? (
+                        <div className="flex items-center gap-1 flex-1">
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEdit(transaction);
+                              if (e.key === 'Escape') handleCancelEdit();
+                            }}
+                            className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveEdit(transaction)}
+                            className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => !transaction.isReconciled && handleStartEdit(transaction, 'description')}
+                          className={`text-left flex-1 ${!transaction.isReconciled ? 'hover:bg-gray-700/50 rounded px-2 py-1 cursor-pointer' : 'cursor-default px-2 py-1'}`}
+                          disabled={transaction.isReconciled}
+                          title={transaction.isReconciled ? 'Cannot edit reconciled transaction' : 'Click to edit description'}
+                        >
+                          {transaction.description}
+                        </button>
+                      )}
                       {transaction.isReconciled && (
                         <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-300 rounded-lg border border-green-500/30">
                           Cleared
@@ -240,35 +492,28 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-300">
-                    {transaction.category}
-                  </td>
-                  <td className={`px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${
-                    transaction.amount < 0 ? 'text-red-400' : 'text-green-400'
-                  }`}>
-                    {editingAmount === transaction.id && !transaction.isReconciled ? (
-                      <div className="flex items-center gap-1 justify-end">
-                        <span className="text-gray-300">{transaction.amount < 0 ? '-' : ''}$</span>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-300">
+                    {editingField?.id === transaction.id && editingField.field === 'category' && !transaction.isReconciled ? (
+                      <div className="flex items-center gap-1">
                         <input
-                          type="number"
-                          step="0.01"
-                          value={editAmount}
-                          onChange={(e) => setEditAmount(e.target.value)}
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleSaveAmount(transaction);
-                            if (e.key === 'Escape') handleCancelEditAmount();
+                            if (e.key === 'Enter') handleSaveEdit(transaction);
+                            if (e.key === 'Escape') handleCancelEdit();
                           }}
-                          className="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-right"
+                          className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white"
                           autoFocus
                         />
                         <button
-                          onClick={() => handleSaveAmount(transaction)}
+                          onClick={() => handleSaveEdit(transaction)}
                           className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
                         >
                           ✓
                         </button>
                         <button
-                          onClick={handleCancelEditAmount}
+                          onClick={handleCancelEdit}
                           className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
                         >
                           ✕
@@ -276,7 +521,49 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                       </div>
                     ) : (
                       <button
-                        onClick={() => !transaction.isReconciled && handleStartEditAmount(transaction)}
+                        onClick={() => !transaction.isReconciled && handleStartEdit(transaction, 'category')}
+                        className={`text-left w-full ${!transaction.isReconciled ? 'hover:bg-gray-700/50 rounded px-2 py-1 cursor-pointer' : 'cursor-default px-2 py-1'}`}
+                        disabled={transaction.isReconciled}
+                        title={transaction.isReconciled ? 'Cannot edit reconciled transaction' : 'Click to edit category'}
+                      >
+                        {transaction.category}
+                      </button>
+                    )}
+                  </td>
+                  <td className={`px-3 py-2 whitespace-nowrap text-xs text-right font-semibold ${
+                    transaction.amount < 0 ? 'text-red-400' : 'text-green-400'
+                  }`}>
+                    {editingField?.id === transaction.id && editingField.field === 'amount' && !transaction.isReconciled ? (
+                      <div className="flex items-center gap-1 justify-end">
+                        <span className="text-gray-300">{transaction.amount < 0 ? '-' : ''}$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveEdit(transaction);
+                            if (e.key === 'Escape') handleCancelEdit();
+                          }}
+                          className="w-24 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-right"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleSaveEdit(transaction)}
+                          className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => !transaction.isReconciled && handleStartEdit(transaction, 'amount')}
                         className={`text-right w-full ${!transaction.isReconciled ? 'hover:bg-gray-700/50 rounded px-2 py-1 cursor-pointer' : 'cursor-default'}`}
                         disabled={transaction.isReconciled}
                         title={transaction.isReconciled ? 'Cannot edit reconciled transaction' : 'Click to edit amount'}
@@ -285,24 +572,29 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold text-white">
+                  <td className={`px-3 py-2 whitespace-nowrap text-sm text-right font-semibold ${
+                    transaction.balance < 0 ? 'text-red-400' : 'text-green-400'
+                  }`}>
                     ${transaction.balance.toFixed(2)}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-center text-sm">
+                  <td className="px-3 py-2 whitespace-nowrap text-center text-sm">
                     <div className="flex gap-2 justify-center items-center">
                       {transaction.description.includes('(Projected)') ? (
                         <>
-                          <button
-                            onClick={() => handleToggleProjectedVisibility(transaction)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                              transaction.isProjectedVisible !== false ? 'bg-blue-500' : 'bg-gray-600'
-                            }`}
-                            title={transaction.isProjectedVisible !== false ? 'Included in balance' : 'Excluded from balance'}
-                          >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              transaction.isProjectedVisible !== false ? 'translate-x-6' : 'translate-x-1'
-                            }`} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400">Include:</span>
+                            <button
+                              onClick={() => handleToggleProjectedVisibility(transaction)}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                transaction.isProjectedVisible !== false ? 'bg-blue-500' : 'bg-gray-600'
+                              }`}
+                              title={transaction.isProjectedVisible !== false ? 'Included in balance' : 'Excluded from balance'}
+                            >
+                              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                transaction.isProjectedVisible !== false ? 'translate-x-6' : 'translate-x-1'
+                              }`} />
+                            </button>
+                          </div>
                           <button
                             onClick={() => handleMarkAsProcessed(transaction)}
                             className="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-medium text-xs"
@@ -538,7 +830,7 @@ const CreateRecurringBillModal: React.FC<CreateRecurringBillModalProps> = ({
       amount: finalAmount,
       frequency: formData.frequency,
       dayOfMonth: formData.frequency === 'monthly' ? parseInt(formData.dayOfMonth) : undefined,
-      nextDueDate: new Date(formData.nextDueDate),
+      nextDueDate: new Date(formData.nextDueDate + 'T00:00:00'), // Force local timezone
       isActive: true,
     });
   };
@@ -597,11 +889,12 @@ const CreateRecurringBillModal: React.FC<CreateRecurringBillModalProps> = ({
                 <option value="weekly">Weekly</option>
                 <option value="biweekly">Bi-weekly</option>
                 <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
                 <option value="yearly">Yearly</option>
               </select>
             </div>
 
-            {formData.frequency === 'monthly' && (
+            {(formData.frequency === 'monthly' || formData.frequency === 'quarterly') && (
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1">
                   Day of Month

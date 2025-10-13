@@ -9,7 +9,7 @@ interface ProjectionsProps {
 export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentBalance }) => {
   const [includeProjections, setIncludeProjections] = useState(true);
 
-  // Filter for future transactions only (projected/pending)
+  // Filter for future projected transactions only (exclude pending transactions as they're treated as cleared)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -17,14 +17,15 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
     .filter(t => {
       const txDate = new Date(t.date);
       txDate.setHours(0, 0, 0, 0);
-      return txDate > today;
+      // Only include transactions after today that are projected (not pending actual transactions)
+      return txDate > today && t.description.includes('(Projected)');
     })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   // Filter out projected transactions if toggle is off
   const futureTransactions = includeProjections
     ? allFutureTransactions
-    : allFutureTransactions.filter(t => !t.description.includes('(Projected)'));
+    : [];
 
   // Group transactions by month
   const groupedByMonth = futureTransactions.reduce((acc, t) => {
@@ -85,7 +86,9 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30">
           <h3 className="text-sm font-medium text-blue-300 mb-2">Current Balance</h3>
-          <p className="text-3xl font-bold text-white">${currentBalance.toFixed(2)}</p>
+          <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+            ${currentBalance.toFixed(2)}
+          </p>
         </div>
 
         <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl p-6 border border-green-500/30">
@@ -108,7 +111,9 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
           }`}>
             Projected End Balance
           </h3>
-          <p className="text-3xl font-bold text-white">${projectedEndBalance.toFixed(2)}</p>
+          <p className={`text-3xl font-bold ${projectedEndBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+            ${projectedEndBalance.toFixed(2)}
+          </p>
           <p className={`text-sm mt-1 ${netChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
             {netChange >= 0 ? '+' : ''}{netChange.toFixed(2)} net change
           </p>
@@ -150,14 +155,18 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
                   <h4 className="text-lg font-semibold text-white">{monthName}</h4>
                   <div className="text-right">
                     <p className="text-sm text-gray-400">End Balance</p>
-                    <p className="text-2xl font-bold text-white">${endBalance.toFixed(2)}</p>
+                    <p className={`text-2xl font-bold ${endBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      ${endBalance.toFixed(2)}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div className="bg-gray-700/50 rounded-xl p-3">
                     <p className="text-xs text-gray-400">Start</p>
-                    <p className="text-lg font-semibold text-white">${startBalance.toFixed(2)}</p>
+                    <p className={`text-lg font-semibold ${startBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      ${startBalance.toFixed(2)}
+                    </p>
                   </div>
                   <div className="bg-green-500/20 rounded-xl p-3">
                     <p className="text-xs text-green-300">Income</p>
@@ -182,13 +191,17 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
                           {t.date.toLocaleDateString()} • {t.category}
                         </p>
                       </div>
-                      <div className="text-right">
+                      <div className="flex items-center gap-6 text-right">
                         <p className={`font-semibold ${
                           t.amount < 0 ? 'text-red-400' : 'text-green-400'
                         }`}>
                           {t.amount < 0 ? '-' : '+'}${Math.abs(t.amount).toFixed(2)}
                         </p>
-                        <p className="text-sm text-gray-400">${t.balance.toFixed(2)}</p>
+                        <p className={`font-semibold ${
+                          t.balance < 0 ? 'text-red-400' : 'text-green-400'
+                        }`}>
+                          ${t.balance.toFixed(2)}
+                        </p>
                       </div>
                     </div>
                   ))}

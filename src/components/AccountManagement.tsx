@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Account } from '../types';
+import { clearAllData } from '../utils/storage';
 
 interface AccountManagementProps {
   accounts: Account[];
@@ -102,7 +103,23 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
 
         {/* Account List */}
         <div className="mb-8">
-          <h3 className="text-lg font-semibold text-white mb-4">Your Accounts</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-white">Your Accounts</h3>
+            <button
+              onClick={() => {
+                if (confirm('⚠️ WARNING: This will delete ALL data including accounts, transactions, recurring bills, and debts. This cannot be undone!\n\nAre you absolutely sure?')) {
+                  if (confirm('This is your final warning. Click OK to permanently delete everything.')) {
+                    clearAllData();
+                    window.location.reload();
+                  }
+                }
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+              title="Delete all data and start fresh"
+            >
+              🗑️ Clear All Data
+            </button>
+          </div>
           <div className="space-y-3">
             {accounts.map(account => (
               <div

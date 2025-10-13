@@ -31,9 +31,10 @@ export interface RecurringBill {
   description: string;
   category: string;
   amount: number;
-  frequency: 'weekly' | 'biweekly' | 'monthly' | 'yearly';
-  dayOfMonth?: number; // For monthly bills
-  dayOfWeek?: number; // For weekly bills (0-6)
+  frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
+  dayOfMonth?: number; // For monthly bills (1-31)
+  dayOfWeek?: number; // For weekly bills (0-6: Sunday-Saturday)
+  weekOfMonth?: number; // For monthly bills on specific week (1-4: 1st, 2nd, 3rd, 4th, or 5 for last)
   nextDueDate: Date;
   isActive: boolean;
 }

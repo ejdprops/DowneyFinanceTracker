@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   RECURRING_BILLS: 'usaa_bills_recurring',
   DEBTS: 'usaa_bills_debts',
   ACTIVE_ACCOUNT_ID: 'usaa_bills_active_account',
+  DISMISSED_PROJECTIONS: 'usaa_bills_dismissed_projections',
 };
 
 // Transactions
@@ -71,7 +72,10 @@ export const loadRecurringBills = (): RecurringBill[] => {
   const parsed = JSON.parse(data);
   return parsed.map((b: any) => ({
     ...b,
-    nextDueDate: new Date(b.nextDueDate),
+    // Force local timezone to avoid date shift issues
+    nextDueDate: typeof b.nextDueDate === 'string' && b.nextDueDate.includes('-')
+      ? new Date(b.nextDueDate + 'T00:00:00')
+      : new Date(b.nextDueDate),
   }));
 };
 
@@ -157,6 +161,21 @@ const migrateRecurringBillsToMultiAccount = (defaultAccountId: string) => {
     accountId: b.accountId || defaultAccountId,
   }));
   saveRecurringBills(migratedBills);
+};
+
+// Dismissed Projections
+export const saveDismissedProjections = (dismissed: Set<string>) => {
+  localStorage.setItem(STORAGE_KEYS.DISMISSED_PROJECTIONS, JSON.stringify(Array.from(dismissed)));
+};
+
+export const loadDismissedProjections = (): Set<string> => {
+  const data = localStorage.getItem(STORAGE_KEYS.DISMISSED_PROJECTIONS);
+  if (!data) return new Set();
+  try {
+    return new Set(JSON.parse(data));
+  } catch {
+    return new Set();
+  }
 };
 
 // Clear all data

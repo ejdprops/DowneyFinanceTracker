@@ -44,10 +44,27 @@ const reviveDates = (data: AppData): AppData => {
       ...t,
       date: new Date(t.date),
     })),
-    recurringBills: data.recurringBills.map(b => ({
-      ...b,
-      nextDueDate: new Date(b.nextDueDate),
-    })),
+    recurringBills: data.recurringBills.map((b: any) => {
+      let nextDueDate: Date;
+
+      if (typeof b.nextDueDate === 'string') {
+        // If it's a date-only string (YYYY-MM-DD), append time to force local timezone
+        if (b.nextDueDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          nextDueDate = new Date(b.nextDueDate + 'T00:00:00');
+        } else {
+          // It's an ISO string with time - extract date and create in local timezone
+          const dateOnly = b.nextDueDate.split('T')[0];
+          nextDueDate = new Date(dateOnly + 'T00:00:00');
+        }
+      } else {
+        nextDueDate = new Date(b.nextDueDate);
+      }
+
+      return {
+        ...b,
+        nextDueDate,
+      };
+    }),
   };
 };
 

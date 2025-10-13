@@ -8,6 +8,9 @@ interface RecurringBillsManagerProps {
   onDeleteBill: (id: string) => void;
 }
 
+type SortField = 'description' | 'amount' | 'frequency' | 'nextDueDate' | 'dayOfMonth';
+type SortDirection = 'asc' | 'desc';
+
 export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
   bills,
   onAddBill,
@@ -16,56 +19,156 @@ export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingBill, setEditingBill] = useState<RecurringBill | null>(null);
+  const [sortField, setSortField] = useState<SortField>('nextDueDate');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [showInactive, setShowInactive] = useState(false);
 
   const activeBills = bills.filter(b => b.isActive);
   const inactiveBills = bills.filter(b => !b.isActive);
+  const displayBills = showInactive ? [...activeBills, ...inactiveBills] : activeBills;
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedBills = [...displayBills].sort((a, b) => {
+    let comparison = 0;
+
+    switch (sortField) {
+      case 'description':
+        comparison = a.description.localeCompare(b.description);
+        break;
+      case 'amount':
+        comparison = Math.abs(a.amount) - Math.abs(b.amount);
+        break;
+      case 'frequency':
+        const freqOrder = { weekly: 1, biweekly: 2, monthly: 3, quarterly: 4, yearly: 5 };
+        comparison = freqOrder[a.frequency] - freqOrder[b.frequency];
+        break;
+      case 'nextDueDate':
+        comparison = a.nextDueDate.getTime() - b.nextDueDate.getTime();
+        break;
+      case 'dayOfMonth':
+        const aDay = a.dayOfMonth || 999;
+        const bDay = b.dayOfMonth || 999;
+        comparison = aDay - bDay;
+        break;
+    }
+
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <span className="text-gray-500">⇅</span>;
+    return <span className="text-blue-400">{sortDirection === 'asc' ? '↑' : '↓'}</span>;
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-900">Recurring Bills</h2>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          + Add Recurring Bill
-        </button>
+        <h2 className="text-2xl font-bold text-white">Recurring Bills</h2>
+        <div className="flex gap-3">
+          <label className="flex items-center gap-2 text-gray-300">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
+            />
+            Show Inactive
+          </label>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium"
+          >
+            + Add Recurring Bill
+          </button>
+        </div>
       </div>
 
-      {/* Active Bills */}
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-3">Active Bills</h3>
-        {activeBills.length === 0 ? (
-          <p className="text-gray-500">No active recurring bills. Add one to see projections.</p>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {activeBills.map(bill => (
-              <BillCard
-                key={bill.id}
-                bill={bill}
-                onEdit={() => setEditingBill(bill)}
-                onToggleActive={() => onUpdateBill({ ...bill, isActive: false })}
-                onDelete={() => onDeleteBill(bill.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Inactive Bills */}
-      {inactiveBills.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-gray-500 mb-3">Inactive Bills</h3>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {inactiveBills.map(bill => (
-              <BillCard
-                key={bill.id}
-                bill={bill}
-                onEdit={() => setEditingBill(bill)}
-                onToggleActive={() => onUpdateBill({ ...bill, isActive: true })}
-                onDelete={() => onDeleteBill(bill.id)}
-              />
-            ))}
+      {/* Bills Table */}
+      {sortedBills.length === 0 ? (
+        <div className="bg-gray-800/50 rounded-2xl p-12 border border-gray-700 text-center">
+          <p className="text-gray-400">No recurring bills. Add one to see projections.</p>
+        </div>
+      ) : (
+        <div className="bg-gray-800 rounded-2xl border border-gray-700 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-700/50">
+                <tr>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('description')}
+                      className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                    >
+                      Description <SortIcon field="description" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('amount')}
+                      className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                    >
+                      Amount <SortIcon field="amount" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('frequency')}
+                      className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                    >
+                      Frequency <SortIcon field="frequency" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('nextDueDate')}
+                      className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                    >
+                      Next Due <SortIcon field="nextDueDate" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={() => handleSort('dayOfMonth')}
+                      className="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition-colors"
+                    >
+                      Day/Schedule <SortIcon field="dayOfMonth" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <span className="text-sm font-semibold text-gray-300">Category</span>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <span className="text-sm font-semibold text-gray-300">Status</span>
+                  </th>
+                  <th className="px-4 py-3 text-right">
+                    <span className="text-sm font-semibold text-gray-300">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-700">
+                {sortedBills.map(bill => (
+                  <BillRow
+                    key={bill.id}
+                    bill={bill}
+                    onEdit={() => setEditingBill(bill)}
+                    onToggleActive={() => onUpdateBill({ ...bill, isActive: !bill.isActive })}
+                    onDelete={() => {
+                      if (confirm('Are you sure you want to delete this recurring bill?')) {
+                        onDeleteBill(bill.id);
+                      }
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -76,7 +179,11 @@ export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
           bill={editingBill}
           onSave={(bill) => {
             if (editingBill) {
-              onUpdateBill({ ...bill, id: editingBill.id });
+              onUpdateBill({
+                ...bill,
+                id: editingBill.id,
+                accountId: editingBill.accountId, // Preserve accountId
+              });
               setEditingBill(null);
             } else {
               onAddBill(bill);
@@ -93,68 +200,104 @@ export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
   );
 };
 
-// Bill Card Component
-interface BillCardProps {
+// Bill Row Component
+interface BillRowProps {
   bill: RecurringBill;
   onEdit: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
 }
 
-const BillCard: React.FC<BillCardProps> = ({ bill, onEdit, onToggleActive, onDelete }) => {
+const BillRow: React.FC<BillRowProps> = ({ bill, onEdit, onToggleActive, onDelete }) => {
   const formatFrequency = (freq: RecurringBill['frequency']) => {
     return freq.charAt(0).toUpperCase() + freq.slice(1);
   };
 
+  const formatWeekOfMonth = (week?: number) => {
+    if (!week) return '';
+    const weekNames = ['', '1st', '2nd', '3rd', '4th', 'Last'];
+    return weekNames[week] || '';
+  };
+
+  const formatDayOfWeek = (day?: number) => {
+    if (day === undefined) return '';
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return dayNames[day] || '';
+  };
+
+  const getDaySchedule = () => {
+    if (bill.weekOfMonth && bill.dayOfWeek !== undefined) {
+      return `${formatWeekOfMonth(bill.weekOfMonth)} ${formatDayOfWeek(bill.dayOfWeek)}`;
+    }
+    if (bill.dayOfMonth) {
+      return `Day ${bill.dayOfMonth}`;
+    }
+    return '-';
+  };
+
   return (
-    <div className={`bg-white rounded-lg shadow p-4 border-l-4 ${
-      bill.isActive ? 'border-blue-500' : 'border-gray-300'
-    }`}>
-      <div className="flex justify-between items-start mb-2">
-        <h4 className="font-semibold text-gray-900">{bill.description}</h4>
-        <span className={`text-2xl font-bold ${
-          bill.amount < 0 ? 'text-red-600' : 'text-green-600'
+    <tr className={`hover:bg-gray-700/30 transition-colors ${!bill.isActive ? 'opacity-60' : ''}`}>
+      <td className="px-4 py-3">
+        <span className="text-white font-medium">{bill.description}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className={`font-semibold ${
+          bill.amount < 0 ? 'text-red-400' : 'text-green-400'
         }`}>
-          ${Math.abs(bill.amount).toFixed(2)}
+          {bill.amount < 0 ? '-' : '+'}${Math.abs(bill.amount).toFixed(2)}
         </span>
-      </div>
-
-      <div className="space-y-1 text-sm text-gray-600 mb-3">
-        <p>Category: {bill.category}</p>
-        <p>Frequency: {formatFrequency(bill.frequency)}</p>
-        <p>Next Due: {bill.nextDueDate.toLocaleDateString()}</p>
-        {bill.dayOfMonth && <p>Day of Month: {bill.dayOfMonth}</p>}
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={onEdit}
-          className="flex-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
-        >
-          Edit
-        </button>
-        <button
-          onClick={onToggleActive}
-          className={`flex-1 px-3 py-1 text-sm rounded transition-colors ${
-            bill.isActive
-              ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-              : 'bg-green-100 text-green-700 hover:bg-green-200'
-          }`}
-        >
-          {bill.isActive ? 'Pause' : 'Activate'}
-        </button>
-        <button
-          onClick={() => {
-            if (confirm('Are you sure you want to delete this recurring bill?')) {
-              onDelete();
-            }
-          }}
-          className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
-        >
-          Delete
-        </button>
-      </div>
-    </div>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-gray-300">{formatFrequency(bill.frequency)}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-gray-300">{bill.nextDueDate.toLocaleDateString()}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-gray-300">{getDaySchedule()}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className="text-gray-400 text-sm">{bill.category}</span>
+      </td>
+      <td className="px-4 py-3">
+        <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+          bill.isActive
+            ? 'bg-green-500/20 text-green-400'
+            : 'bg-gray-500/20 text-gray-400'
+        }`}>
+          {bill.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onEdit}
+            className="px-2 py-1 text-xs bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors"
+            title="Edit"
+          >
+            Edit
+          </button>
+          <button
+            onClick={onToggleActive}
+            className={`px-2 py-1 text-xs rounded transition-colors ${
+              bill.isActive
+                ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30'
+                : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+            }`}
+            title={bill.isActive ? 'Pause' : 'Activate'}
+          >
+            {bill.isActive ? 'Pause' : 'Activate'}
+          </button>
+          <button
+            onClick={onDelete}
+            className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
+            title="Delete"
+          >
+            Delete
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 };
 
@@ -174,6 +317,8 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
     frequency: bill?.frequency || 'monthly' as RecurringBill['frequency'],
     dayOfMonth: bill?.dayOfMonth?.toString() || '',
     dayOfWeek: bill?.dayOfWeek?.toString() || '',
+    weekOfMonth: bill?.weekOfMonth?.toString() || '',
+    monthlyType: bill?.weekOfMonth ? 'weekday' : 'dayOfMonth',
     nextDueDate: bill?.nextDueDate
       ? bill.nextDueDate.toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0],
@@ -189,9 +334,10 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
       category: formData.category,
       amount,
       frequency: formData.frequency,
-      dayOfMonth: formData.dayOfMonth ? parseInt(formData.dayOfMonth) : undefined,
-      dayOfWeek: formData.dayOfWeek ? parseInt(formData.dayOfWeek) : undefined,
-      nextDueDate: new Date(formData.nextDueDate),
+      dayOfMonth: formData.monthlyType === 'dayOfMonth' && formData.dayOfMonth ? parseInt(formData.dayOfMonth) : undefined,
+      dayOfWeek: formData.monthlyType === 'weekday' && formData.dayOfWeek ? parseInt(formData.dayOfWeek) : (formData.frequency === 'weekly' && formData.dayOfWeek ? parseInt(formData.dayOfWeek) : undefined),
+      weekOfMonth: formData.monthlyType === 'weekday' && formData.weekOfMonth ? parseInt(formData.weekOfMonth) : undefined,
+      nextDueDate: new Date(formData.nextDueDate + 'T00:00:00'), // Force local timezone
       isActive: true,
     });
   };
@@ -265,24 +411,96 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
               <option value="weekly">Weekly</option>
               <option value="biweekly">Bi-weekly</option>
               <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
               <option value="yearly">Yearly</option>
             </select>
           </div>
 
-          {formData.frequency === 'monthly' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Day of Month (1-31)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="31"
-                value={formData.dayOfMonth}
-                onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="15"
-              />
+          {(formData.frequency === 'monthly' || formData.frequency === 'quarterly') && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Schedule Type
+                </label>
+                <div className="space-y-2">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="dayOfMonth"
+                      checked={formData.monthlyType === 'dayOfMonth'}
+                      onChange={(e) => setFormData({ ...formData, monthlyType: e.target.value as 'dayOfMonth' | 'weekday' })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700">Specific day of month (e.g., 15th)</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="weekday"
+                      checked={formData.monthlyType === 'weekday'}
+                      onChange={(e) => setFormData({ ...formData, monthlyType: e.target.value as 'dayOfMonth' | 'weekday' })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm text-gray-700">Specific weekday (e.g., 2nd Wednesday)</span>
+                  </label>
+                </div>
+              </div>
+
+              {formData.monthlyType === 'dayOfMonth' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Day of Month (1-31)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={formData.dayOfMonth}
+                    onChange={(e) => setFormData({ ...formData, dayOfMonth: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="15"
+                  />
+                </div>
+              )}
+
+              {formData.monthlyType === 'weekday' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Week</label>
+                    <select
+                      value={formData.weekOfMonth}
+                      onChange={(e) => setFormData({ ...formData, weekOfMonth: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required={formData.monthlyType === 'weekday'}
+                    >
+                      <option value="">Select week</option>
+                      <option value="1">1st</option>
+                      <option value="2">2nd</option>
+                      <option value="3">3rd</option>
+                      <option value="4">4th</option>
+                      <option value="5">Last</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Day</label>
+                    <select
+                      value={formData.dayOfWeek}
+                      onChange={(e) => setFormData({ ...formData, dayOfWeek: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      required={formData.monthlyType === 'weekday'}
+                    >
+                      <option value="">Select day</option>
+                      <option value="0">Sunday</option>
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                      <option value="6">Saturday</option>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
