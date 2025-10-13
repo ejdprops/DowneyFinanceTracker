@@ -10,6 +10,7 @@ import { ICloudSync } from './components/ICloudSync';
 import { AccountSelector } from './components/AccountSelector';
 import { AccountManagement } from './components/AccountManagement';
 import { SpendingCharts } from './components/SpendingCharts';
+import { MerchantManagement } from './components/MerchantManagement';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
@@ -28,7 +29,7 @@ import {
 import { generateProjections, calculateBalances } from './utils/projections';
 
 function App() {
-  const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'debts' | 'sync'>('account');
+  const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string>('');
@@ -512,6 +513,16 @@ function App() {
               Spending Charts
             </button>
             <button
+              onClick={() => setCurrentTab('merchants')}
+              className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
+                currentTab === 'merchants'
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+              }`}
+            >
+              Merchants
+            </button>
+            <button
               onClick={() => setCurrentTab('debts')}
               className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
                 currentTab === 'debts'
@@ -640,6 +651,13 @@ function App() {
             {/* Spending Charts Tab */}
             {currentTab === 'charts' && (
               <SpendingCharts
+                transactions={accountTransactions}
+              />
+            )}
+
+            {/* Merchants Tab */}
+            {currentTab === 'merchants' && (
+              <MerchantManagement
                 transactions={accountTransactions}
               />
             )}

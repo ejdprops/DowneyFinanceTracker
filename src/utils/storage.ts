@@ -1,4 +1,4 @@
-import type { Transaction, Account, RecurringBill, Debt } from '../types';
+import type { Transaction, Account, RecurringBill, Debt, MerchantMapping } from '../types';
 
 const STORAGE_KEYS = {
   TRANSACTIONS: 'usaa_bills_transactions',
@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
   DEBTS: 'usaa_bills_debts',
   ACTIVE_ACCOUNT_ID: 'usaa_bills_active_account',
   DISMISSED_PROJECTIONS: 'usaa_bills_dismissed_projections',
+  MERCHANT_MAPPINGS: 'usaa_bills_merchant_mappings',
 };
 
 // Transactions
@@ -176,6 +177,23 @@ export const loadDismissedProjections = (): Set<string> => {
   } catch {
     return new Set();
   }
+};
+
+// Merchant Mappings
+export const saveMerchantMappings = (mappings: MerchantMapping[]) => {
+  localStorage.setItem(STORAGE_KEYS.MERCHANT_MAPPINGS, JSON.stringify(mappings));
+};
+
+export const loadMerchantMappings = (): MerchantMapping[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.MERCHANT_MAPPINGS);
+  if (!data) return [];
+
+  const parsed = JSON.parse(data);
+  return parsed.map((m: any) => ({
+    ...m,
+    createdAt: new Date(m.createdAt),
+    updatedAt: new Date(m.updatedAt),
+  }));
 };
 
 // Clear all data

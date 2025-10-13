@@ -54,3 +54,13 @@ export interface ParsedCSVData {
   transactions: Transaction[];
   errors: string[];
 }
+
+export interface MerchantMapping {
+  id: string;
+  originalDescriptions: string[]; // List of raw descriptions that map to this merchant
+  displayName: string; // The unified name to show
+  category?: string; // Optional default category
+  isCustom: boolean; // True if user-created, false if auto-detected
+  createdAt: Date;
+  updatedAt: Date;
+}

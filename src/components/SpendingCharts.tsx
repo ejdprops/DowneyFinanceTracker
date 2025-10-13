@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { compareTwoStrings } from 'string-similarity';
-import type { Transaction } from '../types';
+import type { Transaction, MerchantMapping } from '../types';
+import { loadMerchantMappings } from '../utils/storage';
 
 interface SpendingChartsProps {
   transactions: Transaction[];
@@ -57,11 +58,24 @@ const cleanDescription = (description: string): string => {
     .toLowerCase();
 };
 
-// Normalize merchant name using pattern matching and fuzzy logic
-const normalizeMerchantName = (description: string, allDescriptions?: string[]): string => {
+// Normalize merchant name using pattern matching, custom mappings, and fuzzy logic
+const normalizeMerchantName = (
+  description: string,
+  allDescriptions?: string[],
+  customMappings?: MerchantMapping[]
+): string => {
   const cleaned = cleanDescription(description);
 
-  // First try exact pattern matching
+  // First check custom user-defined mappings (highest priority)
+  if (customMappings) {
+    for (const mapping of customMappings) {
+      if (mapping.originalDescriptions.includes(description)) {
+        return mapping.displayName;
+      }
+    }
+  }
+
+  // Then try exact pattern matching
   for (const { pattern, name, keywords } of MERCHANT_PATTERNS) {
     if (pattern.test(description)) {
       return name;
@@ -110,6 +124,12 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
   const [groupBy, setGroupBy] = useState<'category' | 'description'>('category');
   const [showIncome, setShowIncome] = useState(false);
   const [groupSimilar, setGroupSimilar] = useState(true);
+  const [merchantMappings, setMerchantMappings] = useState<MerchantMapping[]>([]);
+
+  // Load merchant mappings on mount
+  useEffect(() => {
+    setMerchantMappings(loadMerchantMappings());
+  }, []);
 
   // Filter transactions by date range and exclude projected
   const filteredTransactions = useMemo(() => {
@@ -158,7 +178,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
       } else {
         // Group by description with optional merchant normalization
         if (groupSimilar) {
-          key = normalizeMerchantName(t.description, allDescriptions);
+          key = normalizeMerchantName(t.description, allDescriptions, merchantMappings);
         } else {
           key = t.description;
         }
@@ -176,7 +196,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
     return Object.entries(groups)
       .map(([name, data]) => ({ name, ...data }))
       .sort((a, b) => b.total - a.total);
-  }, [filteredTransactions, groupBy, groupSimilar]);
+  }, [filteredTransactions, groupBy, groupSimilar, merchantMappings]);
 
   const totalAmount = groupedData.reduce((sum, item) => sum + item.total, 0);
 
@@ -248,7 +268,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions }) 
             <label htmlFor="groupSimilar" className="text-sm text-gray-300">
               Group similar merchants using fuzzy matching
               <span className="block text-xs text-gray-500 mt-0.5">
-                Automatically combines variations like "AMAZON.COM*123" and "AMZN MKTP US*456" into "Amazon"
+                Uses custom mappings from Merchants tab and auto-groups similar descriptions
               </span>
             </label>
           </div>
