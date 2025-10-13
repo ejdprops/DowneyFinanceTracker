@@ -17,7 +17,7 @@ const MERCHANT_PATTERNS = [
   { pattern: /starbucks|sbux/i, name: 'Starbucks', keywords: ['starbucks', 'sbux'] },
   { pattern: /mcdonald'?s|mcdonalds/i, name: "McDonald's", keywords: ['mcdonalds', 'mcd'] },
   { pattern: /shell|shell oil/i, name: 'Shell', keywords: ['shell'] },
-  { pattern: /exxon|mobil/i, name: 'Exxon/Mobil', keywords: ['exxon', 'mobil'] },
+  { pattern: /exxon|exxonmobil/i, name: 'Exxon/Mobil', keywords: ['exxon', 'exxonmobil'] },
   { pattern: /chevron/i, name: 'Chevron', keywords: ['chevron'] },
   { pattern: /costco/i, name: 'Costco', keywords: ['costco'] },
   { pattern: /kroger/i, name: 'Kroger', keywords: ['kroger'] },
