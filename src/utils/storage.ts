@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   ACTIVE_ACCOUNT_ID: 'usaa_bills_active_account',
   DISMISSED_PROJECTIONS: 'usaa_bills_dismissed_projections',
   MERCHANT_MAPPINGS: 'usaa_bills_merchant_mappings',
+  ICLOUD_FOLDER_PATH: 'usaa_bills_icloud_folder_path',
 };
 
 // Transactions
@@ -194,6 +195,15 @@ export const loadMerchantMappings = (): MerchantMapping[] => {
     createdAt: new Date(m.createdAt),
     updatedAt: new Date(m.updatedAt),
   }));
+};
+
+// iCloud Folder Path
+export const saveICloudFolderPath = (path: string) => {
+  localStorage.setItem(STORAGE_KEYS.ICLOUD_FOLDER_PATH, path);
+};
+
+export const loadICloudFolderPath = (): string | null => {
+  return localStorage.getItem(STORAGE_KEYS.ICLOUD_FOLDER_PATH);
 };
 
 // Clear all data

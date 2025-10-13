@@ -16,6 +16,7 @@ interface ICloudSyncProps {
   activeAccountId: string;
   recurringBills: RecurringBill[];
   debts: Debt[];
+  iCloudDirHandle: any | null;
   onDataLoaded: (data: {
     transactions: Transaction[];
     accounts: Account[];
@@ -23,6 +24,7 @@ interface ICloudSyncProps {
     recurringBills: RecurringBill[];
     debts: Debt[];
   }) => void;
+  onFolderSelected: (dirHandle: any, folderPath: string) => void;
 }
 
 export const ICloudSync: React.FC<ICloudSyncProps> = ({
@@ -31,9 +33,10 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
   activeAccountId,
   recurringBills,
   debts,
+  iCloudDirHandle,
   onDataLoaded,
+  onFolderSelected,
 }) => {
-  const [iCloudDirHandle, setICloudDirHandle] = useState<any>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const supportsFileSystem = isFileSystemAccessSupported();
@@ -41,7 +44,8 @@ export const ICloudSync: React.FC<ICloudSyncProps> = ({
   const handleSelectFolder = async () => {
     const dirHandle = await selectICloudFolder();
     if (dirHandle) {
-      setICloudDirHandle(dirHandle);
+      // Notify parent component of the selected folder
+      onFolderSelected(dirHandle, dirHandle.name);
 
       // Try to load existing data
       const data = await loadFromICloud(dirHandle);

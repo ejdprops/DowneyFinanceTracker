@@ -16,6 +16,8 @@ import {
   saveDebts,
   loadDebts,
   migrateToMultiAccount,
+  saveICloudFolderPath,
+  loadICloudFolderPath,
 } from './utils/storage';
 import { generateProjections, calculateBalances } from './utils/projections';
 
@@ -27,6 +29,9 @@ function AppMobile() {
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [showAccountManagement, setShowAccountManagement] = useState(false);
+  const [iCloudDirHandle, setICloudDirHandle] = useState<any | null>(null);
+  // @ts-ignore - iCloudFolderPath stored but not displayed on mobile
+  const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null);
 
   // Load data on mount
   useEffect(() => {
@@ -35,12 +40,14 @@ function AppMobile() {
     const savedActiveAccountId = loadActiveAccountId();
     const loadedBills = loadRecurringBills();
     const loadedDebts = loadDebts();
+    const savedFolderPath = loadICloudFolderPath();
 
     setTransactions(loadedTransactions);
     setAccounts(migratedAccounts);
     setActiveAccountId(savedActiveAccountId || migratedAccounts[0]?.id || '');
     setRecurringBills(loadedBills);
     setDebts(loadedDebts);
+    setICloudFolderPath(savedFolderPath);
   }, []);
 
   // Save data when it changes
@@ -208,6 +215,12 @@ function AppMobile() {
     setDebts(data.debts);
   };
 
+  const handleFolderSelected = (dirHandle: any, folderPath: string) => {
+    setICloudDirHandle(dirHandle);
+    setICloudFolderPath(folderPath);
+    saveICloudFolderPath(folderPath);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Mobile Header */}
@@ -371,7 +384,9 @@ function AppMobile() {
             activeAccountId={activeAccountId}
             recurringBills={recurringBills}
             debts={debts}
+            iCloudDirHandle={iCloudDirHandle}
             onDataLoaded={handleDataLoaded}
+            onFolderSelected={handleFolderSelected}
           />
         )}
       </div>

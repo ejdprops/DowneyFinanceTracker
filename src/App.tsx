@@ -25,7 +25,10 @@ import {
   migrateToMultiAccount,
   saveDismissedProjections,
   loadDismissedProjections,
+  saveICloudFolderPath,
+  loadICloudFolderPath,
 } from './utils/storage';
+import { saveToICloud } from './utils/icloudStorage';
 import { generateProjections, calculateBalances } from './utils/projections';
 
 function App() {
@@ -40,6 +43,9 @@ function App() {
   const [projectedVisibility, setProjectedVisibility] = useState<Map<string, boolean>>(new Map());
   const [projectedState, setProjectedState] = useState<Map<string, Partial<Transaction>>>(new Map());
   const [showAccountManagement, setShowAccountManagement] = useState(false);
+  const [iCloudDirHandle, setICloudDirHandle] = useState<any | null>(null);
+  const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Load data on mount
   useEffect(() => {
@@ -49,6 +55,7 @@ function App() {
     const loadedBills = loadRecurringBills();
     const loadedDebts = loadDebts();
     const loadedDismissedProjections = loadDismissedProjections();
+    const savedFolderPath = loadICloudFolderPath();
 
     setTransactions(loadedTransactions);
     setAccounts(migratedAccounts);
@@ -56,6 +63,7 @@ function App() {
     setRecurringBills(loadedBills);
     setDebts(loadedDebts);
     setDismissedProjections(loadedDismissedProjections);
+    setICloudFolderPath(savedFolderPath);
   }, []);
 
   // Save data when it changes
@@ -318,6 +326,34 @@ function App() {
     setDebts(data.debts);
   };
 
+  const handleFolderSelected = (dirHandle: any, folderPath: string) => {
+    setICloudDirHandle(dirHandle);
+    setICloudFolderPath(folderPath);
+    saveICloudFolderPath(folderPath);
+  };
+
+  const handleQuickSync = async () => {
+    if (!iCloudDirHandle) {
+      alert('Please select an iCloud Drive folder first from the iCloud Sync tab.');
+      return;
+    }
+
+    setIsSyncing(true);
+    const success = await saveToICloud(iCloudDirHandle, {
+      transactions,
+      accounts,
+      activeAccountId,
+      recurringBills,
+      debts,
+      lastModified: new Date().toISOString(),
+    });
+    setIsSyncing(false);
+
+    if (success) {
+      alert('Data synced to iCloud Drive successfully!');
+    }
+  };
+
   const handleAdjustBalance = () => {
     if (!account) return;
 
@@ -415,14 +451,35 @@ function App() {
               />
             </div>
             <div className="flex justify-between items-start">
-              <div>
+              <div className="flex-1">
                 <h1 className="text-xl font-bold text-white">{account?.name || 'No Account'}</h1>
                 <p className="text-gray-400 text-xs mt-1 flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
                   {account?.institution} •••• {account?.accountNumber.slice(-4)}
                 </p>
+                {iCloudFolderPath && (
+                  <p className="text-blue-400 text-xs mt-1 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                    </svg>
+                    iCloud: {iCloudFolderPath}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-3">
+                {iCloudDirHandle && (
+                  <button
+                    onClick={handleQuickSync}
+                    disabled={isSyncing}
+                    className="px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    title="Sync to iCloud Drive"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                    </svg>
+                    {isSyncing ? 'Syncing...' : 'Sync to iCloud'}
+                  </button>
+                )}
                 <button
                   onClick={handleAdjustBalance}
                   className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium text-sm"
@@ -682,7 +739,9 @@ function App() {
                 activeAccountId={activeAccountId}
                 recurringBills={recurringBills}
                 debts={debts}
+                iCloudDirHandle={iCloudDirHandle}
                 onDataLoaded={handleDataLoaded}
+                onFolderSelected={handleFolderSelected}
               />
             )}
           </div>
