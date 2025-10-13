@@ -28,6 +28,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
     institution: '',
     availableBalance: 0,
     creditLimit: undefined as number | undefined,
+    apr: undefined as number | undefined,
   });
 
   const resetForm = () => {
@@ -39,6 +40,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       institution: '',
       availableBalance: 0,
       creditLimit: undefined,
+      apr: undefined,
     });
     setEditingAccount(null);
     setShowAddForm(false);
@@ -54,6 +56,7 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
       institution: account.institution,
       availableBalance: account.availableBalance,
       creditLimit: account.creditLimit,
+      apr: account.apr,
     });
     setShowAddForm(true);
   };
@@ -67,12 +70,14 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
         ...formData,
         routingNumber: formData.accountType === 'credit_card' ? undefined : formData.routingNumber,
         creditLimit: formData.accountType === 'credit_card' ? formData.creditLimit : undefined,
+        apr: formData.accountType === 'credit_card' ? formData.apr : undefined,
       });
     } else {
       onAddAccount({
         ...formData,
         routingNumber: formData.accountType === 'credit_card' ? undefined : formData.routingNumber,
         creditLimit: formData.accountType === 'credit_card' ? formData.creditLimit : undefined,
+        apr: formData.accountType === 'credit_card' ? formData.apr : undefined,
       });
     }
 
@@ -268,17 +273,30 @@ export const AccountManagement: React.FC<AccountManagementProps> = ({
               </div>
 
               {formData.accountType === 'credit_card' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Credit Limit</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.creditLimit || ''}
-                    onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value ? parseFloat(e.target.value) : undefined })}
-                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-xl text-white"
-                    placeholder="5000.00"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Credit Limit</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.creditLimit || ''}
+                      onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value ? parseFloat(e.target.value) : undefined })}
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-xl text-white"
+                      placeholder="5000.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">APR (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.apr || ''}
+                      onChange={(e) => setFormData({ ...formData, apr: e.target.value ? parseFloat(e.target.value) : undefined })}
+                      className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-xl text-white"
+                      placeholder="19.99"
+                    />
+                  </div>
+                </>
               )}
             </div>
 

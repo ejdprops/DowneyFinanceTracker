@@ -22,6 +22,7 @@ export interface Account {
   availableBalance: number;
   institution: string;
   creditLimit?: number; // For credit cards
+  apr?: number; // Annual Percentage Rate for credit cards
   isDefault?: boolean; // Mark one account as default
 }
 

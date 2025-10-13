@@ -499,19 +499,42 @@ function App() {
                     Show Projected
                   </label>
                 </div>
-                <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-4 py-2 rounded-xl border border-blue-500/30">
-                  <p className="text-xs text-gray-400 mb-0.5">
-                    {account?.accountType === 'credit_card' ? 'Balance' : 'Current Balance'}
-                  </p>
-                  <p className="text-2xl font-bold text-white">
-                    ${currentBalance.toFixed(2)}
-                  </p>
-                  {account?.accountType === 'credit_card' && account?.creditLimit && (
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      Limit: ${account.creditLimit.toLocaleString()}
+                {account?.accountType === 'credit_card' ? (
+                  // Credit Card Display
+                  <div className="text-right">
+                    <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 px-4 py-2 rounded-xl border border-red-500/30 mb-2">
+                      <p className="text-xs text-gray-400 mb-0.5">Current Balance</p>
+                      <p className={`text-2xl font-bold ${currentBalance > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {currentBalance > 0 ? '-' : ''}${Math.abs(currentBalance).toFixed(2)}
+                      </p>
+                      {account.apr && (
+                        <p className="text-[10px] text-gray-400 mt-0.5">
+                          APR: {account.apr}%
+                        </p>
+                      )}
+                    </div>
+                    {account.creditLimit && (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
+                          <p className="text-gray-400 text-[10px]">Credit Limit</p>
+                          <p className="text-white font-semibold">${account.creditLimit.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
+                          <p className="text-gray-400 text-[10px]">Available</p>
+                          <p className="text-green-400 font-semibold">${(account.creditLimit - currentBalance).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  // Regular Account Display
+                  <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-4 py-2 rounded-xl border border-blue-500/30">
+                    <p className="text-xs text-gray-400 mb-0.5">Current Balance</p>
+                    <p className="text-2xl font-bold text-white">
+                      ${currentBalance.toFixed(2)}
                     </p>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
 
