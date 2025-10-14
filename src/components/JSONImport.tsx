@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import type { ParsedCSVData } from '../types';
 
+interface AccountSummary {
+  newBalance?: number;
+  minimumPayment?: number;
+  paymentDueDate?: string;
+}
+
 interface JSONImportProps {
-  onImportComplete: (data: ParsedCSVData) => void;
+  onImportComplete: (data: ParsedCSVData, currentBalance?: number, accountSummary?: AccountSummary) => void;
 }
 
 export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
@@ -15,6 +21,18 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
 
     try {
       const parsed = JSON.parse(jsonText);
+
+      // Extract account summary if present (for credit card statements)
+      const accountSummary: AccountSummary = {};
+      let currentBalance: number | undefined;
+
+      if (parsed.account_summary) {
+        const summary = parsed.account_summary;
+        currentBalance = summary.new_balance;
+        accountSummary.newBalance = summary.new_balance;
+        accountSummary.minimumPayment = summary.minimum_payment;
+        accountSummary.paymentDueDate = summary.payment_due_date;
+      }
 
       // Validate and transform the JSON data
       const transactions = Array.isArray(parsed) ? parsed : parsed.transactions || [];
@@ -62,12 +80,18 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
           amount = parseFloat(rawAmount);
         }
 
-        // For credit card statements, debits are typically positive in the statement
-        // but we store them as negative. Check for debit/credit indicators
-        if (tx.type === 'debit' || tx.transaction_type === 'debit' || amount > 0) {
+        // Check transaction type to determine if it should be negative or positive
+        const txType = (tx.type || '').toLowerCase();
+
+        if (txType === 'payment' || txType === 'refund' || txType === 'credit') {
+          // Payments and refunds should be positive (credits to the account)
           amount = -Math.abs(amount);
-        } else if (tx.type === 'credit' || tx.transaction_type === 'credit') {
+        } else if (txType === 'purchase' || txType === 'fee' || txType === 'interest' || txType === 'debit') {
+          // Purchases, fees, and interest should be negative (debits/charges)
           amount = Math.abs(amount);
+        } else {
+          // If no type specified, use the sign as-is from the JSON
+          // (already parsed correctly above)
         }
 
         return {
@@ -78,15 +102,19 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
           amount,
           balance: 0, // Will be calculated
           isPending: tx.pending || tx.isPending || false,
-          isManual: true,
+          isManual: false, // Imported from JSON, not manually entered
           sortOrder: index,
         };
       });
 
-      onImportComplete({
-        transactions: importedTransactions,
-        errors: [],
-      });
+      onImportComplete(
+        {
+          transactions: importedTransactions,
+          errors: [],
+        },
+        currentBalance,
+        accountSummary
+      );
 
       setJsonText('');
       setShowModal(false);

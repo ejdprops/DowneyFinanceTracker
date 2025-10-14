@@ -29,6 +29,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const [editValue, setEditValue] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'description' | 'category' | 'amount'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Date range filters
   const [dateFrom, setDateFrom] = useState<string>('');
@@ -225,6 +226,39 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     }
   };
 
+  const handleToggleSelection = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleToggleAll = () => {
+    if (selectedIds.size === filteredTransactions.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTransactions.map(t => t.id)));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+
+    const selectedTransactions = filteredTransactions.filter(t => selectedIds.has(t.id));
+    const count = selectedIds.size;
+    const totalAmount = selectedTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+    if (confirm(`Are you sure you want to permanently remove ${count} selected transaction${count > 1 ? 's' : ''}?\n\nTotal: $${totalAmount.toFixed(2)}\n\nThis action cannot be undone.`)) {
+      selectedIds.forEach(id => {
+        onDeleteTransaction(id);
+      });
+      setSelectedIds(new Set());
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
@@ -313,10 +347,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
           <thead className="bg-gray-900/50 border-b border-gray-700">
             <tr>
               <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">
-                <span title="Reconciled">✓</span>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.size > 0 && selectedIds.size === filteredTransactions.length}
+                  onChange={handleToggleAll}
+                  className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
+                  title="Select all"
+                />
               </th>
-              <th className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider">
-                ID
+              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">
+                <span title="Reconciled">✓</span>
               </th>
               <th
                 className="px-3 py-2 text-left text-[10px] font-medium text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-700/30 select-none"
@@ -355,7 +395,19 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                 </div>
               </th>
               <th className="px-3 py-2 text-right text-[10px] font-medium text-gray-300 uppercase tracking-wider">Balance</th>
-              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">Actions</th>
+              <th className="px-3 py-2 text-center text-[10px] font-medium text-gray-300 uppercase tracking-wider">
+                {selectedIds.size > 0 ? (
+                  <button
+                    onClick={handleDeleteSelected}
+                    className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium text-xs"
+                    title={`Remove ${selectedIds.size} selected transaction${selectedIds.size > 1 ? 's' : ''}`}
+                  >
+                    Remove Checked ({selectedIds.size})
+                  </button>
+                ) : (
+                  'Actions'
+                )}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
@@ -368,6 +420,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
             ) : (
               filteredTransactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(transaction.id)}
+                      onChange={() => handleToggleSelection(transaction.id)}
+                      disabled={transaction.description.includes('(Projected)')}
+                      className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600 disabled:opacity-50"
+                      title={transaction.description.includes('(Projected)') ? 'Cannot select projected transactions' : 'Select this transaction'}
+                    />
+                  </td>
                   <td className="px-3 py-2 text-center">
                     <button
                       onClick={() => handleToggleReconciled(transaction)}
@@ -391,9 +453,6 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                         ? '—'
                         : transaction.isReconciled && '✓'}
                     </button>
-                  </td>
-                  <td className="px-3 py-2 text-[10px] text-gray-500 font-mono truncate max-w-[120px]" title={transaction.id}>
-                    {transaction.id}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm text-white">
                     {editingField?.id === transaction.id && editingField.field === 'date' && !transaction.isReconciled ? (

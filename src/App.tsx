@@ -149,7 +149,11 @@ function App() {
     }
   };
 
-  const handleImportComplete = (data: ParsedCSVData, currentBalance?: number) => {
+  const handleImportComplete = (
+    data: ParsedCSVData,
+    currentBalance?: number,
+    accountSummary?: { newBalance?: number; minimumPayment?: number; paymentDueDate?: string }
+  ) => {
     if (!activeAccountId) return;
 
     // Track duplicates and updates
@@ -233,9 +237,26 @@ function App() {
 
     setTransactions(updatedTransactions);
 
-    // Update account balance if provided
-    if (currentBalance !== undefined && account) {
-      const updatedAccount = { ...account, availableBalance: currentBalance };
+    // Update account balance and summary if provided
+    if (account && (currentBalance !== undefined || accountSummary)) {
+      const updatedAccount = { ...account };
+
+      if (currentBalance !== undefined) {
+        updatedAccount.availableBalance = currentBalance;
+      }
+
+      if (accountSummary) {
+        if (accountSummary.newBalance !== undefined) {
+          updatedAccount.availableBalance = accountSummary.newBalance;
+        }
+        if (accountSummary.minimumPayment !== undefined) {
+          updatedAccount.minimumPayment = accountSummary.minimumPayment;
+        }
+        if (accountSummary.paymentDueDate) {
+          updatedAccount.paymentDueDate = new Date(accountSummary.paymentDueDate);
+        }
+      }
+
       handleUpdateAccount(updatedAccount);
     }
 
@@ -243,9 +264,12 @@ function App() {
       alert(`Import completed with ${data.errors.length} errors. Check console for details.`);
       console.error('Import errors:', data.errors);
     } else {
-      const balanceMsg = currentBalance !== undefined ? `\nBalance updated to: $${currentBalance.toFixed(2)}` : '';
+      const balance = currentBalance ?? accountSummary?.newBalance;
+      const balanceMsg = balance !== undefined ? `\nBalance updated to: $${balance.toFixed(2)}` : '';
       const postedMsg = postedCount > 0 ? `\nPending→Posted: ${postedCount}` : '';
-      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}${postedMsg}${balanceMsg}`);
+      const minPaymentMsg = accountSummary?.minimumPayment ? `\nMin Payment: $${accountSummary.minimumPayment.toFixed(2)}` : '';
+      const dueDateMsg = accountSummary?.paymentDueDate ? `\nDue Date: ${new Date(accountSummary.paymentDueDate).toLocaleDateString()}` : '';
+      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}${postedMsg}${balanceMsg}${minPaymentMsg}${dueDateMsg}`);
     }
   };
 

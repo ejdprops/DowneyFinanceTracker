@@ -24,6 +24,8 @@ export interface Account {
   creditLimit?: number; // For credit cards
   apr?: number; // Annual Percentage Rate for credit cards
   statementDueDate?: number; // Day of month when statement is due (1-31) for credit cards
+  minimumPayment?: number; // Minimum payment amount for credit cards
+  paymentDueDate?: Date; // Exact payment due date for credit cards
   isDefault?: boolean; // Mark one account as default
 }
 
