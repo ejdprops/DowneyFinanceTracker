@@ -13,13 +13,16 @@ export const isMobileDevice = (): boolean => {
   // Check for Android
   const isAndroid = /android/i.test(userAgent);
 
-  // Check for other mobile devices
-  const isMobile = /Mobile|Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
+  // Check for other mobile devices (but exclude iPad from this check as it's handled above)
+  const isMobileUserAgent = /Mobile|Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
 
-  // Also check screen size as a fallback
+  // Only use screen size if we also detect touch capability
+  // This prevents desktop browsers in narrow windows from being detected as mobile
+  const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const isSmallScreen = window.innerWidth <= 768;
+  const isSmallTouchDevice = hasTouch && isSmallScreen;
 
-  return isIOS || isAndroid || isMobile || isSmallScreen;
+  return isIOS || isAndroid || isMobileUserAgent || isSmallTouchDevice;
 };
 
 /**
@@ -27,7 +30,7 @@ export const isMobileDevice = (): boolean => {
  */
 export const isIOSDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
-  const userAgent = navigator.userAgent || navigator.vendor;
+  const userAgent = navigator.userAgent;
   return /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
 };
 
@@ -36,6 +39,6 @@ export const isIOSDevice = (): boolean => {
  */
 export const isAndroidDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
-  const userAgent = navigator.userAgent || navigator.vendor;
+  const userAgent = navigator.userAgent;
   return /android/i.test(userAgent);
 };

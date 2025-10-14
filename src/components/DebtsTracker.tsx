@@ -36,18 +36,18 @@ export const DebtsTracker: React.FC<DebtsTrackerProps> = ({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-red-50 rounded-lg p-6 border border-red-200">
-          <h3 className="text-sm font-medium text-red-900 mb-2">Total Debt</h3>
-          <p className="text-3xl font-bold text-red-600">${totalDebt.toFixed(2)}</p>
+      <div className="flex justify-center gap-2">
+        <div className="bg-red-50 rounded-3xl p-2 border border-red-200 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-red-900 mb-1">Total Debt</h3>
+          <p className="text-2xl font-bold text-red-600 whitespace-nowrap">${totalDebt.toFixed(2)}</p>
         </div>
-        <div className="bg-orange-50 rounded-lg p-6 border border-orange-200">
-          <h3 className="text-sm font-medium text-orange-900 mb-2">Total Min. Payment</h3>
-          <p className="text-3xl font-bold text-orange-600">${totalMinimumPayment.toFixed(2)}</p>
+        <div className="bg-orange-50 rounded-3xl p-2 border border-orange-200 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-orange-900 mb-1">Total Min. Payment</h3>
+          <p className="text-2xl font-bold text-orange-600 whitespace-nowrap">${totalMinimumPayment.toFixed(2)}</p>
         </div>
-        <div className="bg-purple-50 rounded-lg p-6 border border-purple-200">
-          <h3 className="text-sm font-medium text-purple-900 mb-2">Avg. Interest Rate</h3>
-          <p className="text-3xl font-bold text-purple-600">
+        <div className="bg-purple-50 rounded-3xl p-2 border border-purple-200 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-purple-900 mb-1">Avg. Interest Rate</h3>
+          <p className="text-2xl font-bold text-purple-600 whitespace-nowrap">
             {isNaN(weightedInterestRate) ? '0.00' : weightedInterestRate.toFixed(2)}%
           </p>
         </div>

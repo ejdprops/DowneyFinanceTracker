@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react';
 import { parseCSV } from '../utils/csvParser';
-import { parseBankStatementPDF } from '../utils/pdfParser';
 import type { ParsedCSVData } from '../types';
 
 interface CSVImportProps {
@@ -32,6 +31,8 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
       let data: ParsedCSVData;
 
       if (isPDF) {
+        // Lazy load PDF parser only when needed
+        const { parseBankStatementPDF } = await import('../utils/pdfParser');
         data = await parseBankStatementPDF(file);
       } else {
         data = await parseCSV(file);

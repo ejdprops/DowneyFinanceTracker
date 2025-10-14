@@ -11,7 +11,7 @@ interface SpendingChartsProps {
 
 // Common merchant patterns to group similar descriptions
 const MERCHANT_PATTERNS = [
-  { pattern: /amazon|amzn/i, name: 'Amazon', keywords: ['amazon', 'amzn', 'aws'] },
+  { pattern: /amazon|amzn|amazon\.com|amazon\s+mktpl|amazon\s+mktp|amazon\s+marketplace|amazon\s+prime|prime\s+video/i, name: 'Amazon', keywords: ['amazon', 'amzn', 'aws', 'mktpl', 'mktp'] },
   { pattern: /walmart|wal-mart|wm supercenter/i, name: 'Walmart', keywords: ['walmart', 'wal-mart', 'wm'] },
   { pattern: /target/i, name: 'Target', keywords: ['target'] },
   { pattern: /starbucks|sbux/i, name: 'Starbucks', keywords: ['starbucks', 'sbux'] },
@@ -447,26 +447,26 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className={`rounded-2xl p-6 border ${
+      <div className="flex justify-center gap-2">
+        <div className={`rounded-3xl p-2 border inline-flex flex-col items-center ${
           showIncome
             ? 'bg-gradient-to-br from-green-500/20 to-green-600/20 border-green-500/30'
             : 'bg-gradient-to-br from-red-500/20 to-red-600/20 border-red-500/30'
         }`}>
-          <h3 className={`text-sm font-medium mb-2 ${showIncome ? 'text-green-300' : 'text-red-300'}`}>
+          <h3 className={`text-xs font-medium mb-1 ${showIncome ? 'text-green-300' : 'text-red-300'}`}>
             Total {showIncome ? 'Income' : 'Expenses'}
           </h3>
-          <p className="text-3xl font-bold text-white">${totalAmount.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-white whitespace-nowrap">${totalAmount.toFixed(2)}</p>
         </div>
-        <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30">
-          <h3 className="text-sm font-medium text-blue-300 mb-2">Total Transactions</h3>
-          <p className="text-3xl font-bold text-white">{filteredTransactions.length}</p>
+        <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-3xl p-2 border border-blue-500/30 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-blue-300 mb-1">Total Transactions</h3>
+          <p className="text-2xl font-bold text-white whitespace-nowrap">{filteredTransactions.length}</p>
         </div>
-        <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl p-6 border border-purple-500/30">
-          <h3 className="text-sm font-medium text-purple-300 mb-2">
+        <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-3xl p-2 border border-purple-500/30 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-purple-300 mb-1">
             {groupBy === 'category' ? 'Categories' : 'Unique Descriptions'}
           </h3>
-          <p className="text-3xl font-bold text-white">{groupedData.length}</p>
+          <p className="text-2xl font-bold text-white whitespace-nowrap">{groupedData.length}</p>
         </div>
       </div>
 

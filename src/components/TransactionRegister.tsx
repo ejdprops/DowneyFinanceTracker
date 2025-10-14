@@ -6,6 +6,7 @@ interface TransactionRegisterProps {
   transactions: Transaction[];
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   onDeleteTransaction: (id: string) => void;
+  onDeleteMultipleTransactions: (ids: string[]) => void;
   onCreateRecurringBill: (bill: Omit<RecurringBill, 'id'>) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
   onDismissProjection: (id: string) => void;
@@ -16,6 +17,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   transactions,
   onAddTransaction,
   onDeleteTransaction,
+  onDeleteMultipleTransactions,
   onCreateRecurringBill,
   onUpdateTransaction,
   onDismissProjection,
@@ -24,7 +26,6 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [showProjected, setShowProjected] = useState(true);
   const [editingField, setEditingField] = useState<{id: string; field: 'date' | 'description' | 'category' | 'amount'} | null>(null);
   const [editValue, setEditValue] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'description' | 'category' | 'amount'>('date');
@@ -71,13 +72,10 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     return sortDirection === 'asc' ? comparison : -comparison;
   });
 
-  // Filter transactions by search term, projected toggle, and date range
+  // Filter transactions by search term and date range
   const filteredTransactions = sortedTransactions.filter(t => {
     const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          t.category.toLowerCase().includes(searchTerm.toLowerCase());
-    // Filter projected transactions based on toggle (all CSV imports should always show)
-    const isProjectedTransaction = t.description.includes('(Projected)');
-    const matchesProjected = showProjected || !isProjectedTransaction;
 
     // Date range filter
     let matchesDateRange = true;
@@ -103,7 +101,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
       matchesDateRange = matchesDateRange && txDate <= thruDate;
     }
 
-    return matchesSearch && matchesProjected && matchesDateRange;
+    return matchesSearch && matchesDateRange;
   });
 
   const handleToggleReconciled = (transaction: Transaction) => {
@@ -252,9 +250,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     const totalAmount = selectedTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
     if (confirm(`Are you sure you want to permanently remove ${count} selected transaction${count > 1 ? 's' : ''}?\n\nTotal: $${totalAmount.toFixed(2)}\n\nThis action cannot be undone.`)) {
-      selectedIds.forEach(id => {
-        onDeleteTransaction(id);
-      });
+      onDeleteMultipleTransactions(Array.from(selectedIds));
       setSelectedIds(new Set());
     }
   };
@@ -282,23 +278,6 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full px-3 py-2 text-sm bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-          </div>
-
-          {/* Toggle Pending */}
-          <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2 border border-gray-700">
-            <span className="text-xs text-gray-300 whitespace-nowrap">Show Projected</span>
-            <button
-              onClick={() => setShowProjected(!showProjected)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                showProjected ? 'bg-blue-500' : 'bg-gray-600'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                  showProjected ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
           </div>
         </div>
 

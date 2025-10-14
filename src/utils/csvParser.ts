@@ -37,6 +37,8 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
         const headers = results.meta.fields || [];
         const firstRow = results.data[0];
 
+        console.log('CSV Headers:', headers);
+
         detectedFormat = bankFormats.find(format => format.detect(headers, firstRow)) || null;
 
         if (!detectedFormat) {
@@ -46,8 +48,11 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
 
         console.log(`Detected CSV format: ${detectedFormat.name}`);
 
-        // First pass: count total transactions per date
+        // First pass: count total transactions per date AND detect USAA credit card
         const dateTotals = new Map<string, number>();
+        let usaaCreditCardPaymentCount = 0;
+        let usaaTotalRows = 0;
+
         results.data.forEach((row: any) => {
           try {
             const dateStr = row['Date'] || row['date'] || row['Transaction Date'] || row['Post Date'] || row['Posted Date'] || row['Posting Date'];
@@ -58,6 +63,18 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
                 dateTotals.set(dateKey, (dateTotals.get(dateKey) || 0) + 1);
               }
             }
+
+            // For USAA format, detect if this is a credit card by checking for "Credit Card Payment" category
+            if (detectedFormat!.name === 'USAA') {
+              usaaTotalRows++;
+              const category = row['Category'] || row['category'] || '';
+              const description = row['Description'] || row['description'] || '';
+              if (category.toLowerCase().includes('credit card payment') ||
+                  description.toLowerCase().includes('credit card payment') ||
+                  description.toLowerCase().includes('automatic payment')) {
+                usaaCreditCardPaymentCount++;
+              }
+            }
           } catch {
             // Skip invalid rows in counting pass
           }
@@ -66,6 +83,17 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
         // Second pass: parse transactions with reversed letter assignment
         // Map of date string -> current count (how many we've processed)
         const dateCounts = new Map<string, number>();
+
+        // If this is USAA and we found credit card payments, mark it as a credit card CSV
+        // Use a special key in dateCounts map to pass this info to the parser
+        if (detectedFormat!.name === 'USAA' && usaaCreditCardPaymentCount > 0 && usaaTotalRows > 0) {
+          const creditCardRatio = usaaCreditCardPaymentCount / usaaTotalRows;
+          // If more than 5% of transactions are credit card payments, it's probably a credit card account
+          if (creditCardRatio > 0.05) {
+            dateCounts.set('__USAA_IS_CREDIT_CARD__', 1);
+            console.log('Detected USAA Credit Card CSV (will invert amounts)');
+          }
+        }
 
         results.data.forEach((row: any, index: number) => {
           try {
@@ -127,10 +155,22 @@ const parseUSAARow = (row: any, index: number, dateCounts?: Map<string, number>,
   }
 
   // Parse amount - remove $ and commas, handle negative
-  const amount = parseFloat(amountStr?.toString().replace(/[$,]/g, '') || '0');
+  let amount = parseFloat(amountStr?.toString().replace(/[$,]/g, '') || '0');
 
   if (isNaN(amount)) {
     throw new Error('Invalid amount format');
+  }
+
+  // USAA Credit Cards have reversed signs compared to checking accounts:
+  // - Checking: positive = spent, negative = received
+  // - Credit Card: positive = received (payments), negative = spent (charges)
+  // The detection is done at the file level (passed via dateCounts map with special key)
+  // If this is a credit card CSV, invert all amounts
+  const isCreditCardCSV = dateCounts?.get('__USAA_IS_CREDIT_CARD__') === 1;
+
+  if (isCreditCardCSV) {
+    // This is a credit card - invert all amounts
+    amount = -amount;
   }
 
   // Check if transaction is pending or posted
@@ -292,10 +332,19 @@ const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
   const dateStr = row['Transaction Date'] || row['Posted Date'];
   const description = row['Description'];
   const category = row['Category'] || 'Uncategorized';
-  const debitStr = row['Debit'] || '0';
-  const creditStr = row['Credit'] || '0';
+  const debitStr = row['Debit'];
+  const creditStr = row['Credit'];
+
+  console.log(`Capital One row ${index + 1}:`, {
+    debitStr,
+    creditStr,
+    debitType: typeof debitStr,
+    creditType: typeof creditStr,
+    description
+  });
 
   if (!dateStr || !description) {
+    console.warn(`Skipping Capital One row ${index + 1}: Missing date or description`);
     return null;
   }
 
@@ -304,13 +353,37 @@ const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
     throw new Error(`Invalid date: ${dateStr}`);
   }
 
-  const debit = parseFloat(debitStr.toString().replace(/[$,]/g, '')) || 0;
-  const credit = parseFloat(creditStr.toString().replace(/[$,]/g, '')) || 0;
+  // Handle empty strings and parse amounts
+  // Empty string, null, or undefined should become 0
+  let debit = 0;
+  let credit = 0;
+
+  if (debitStr !== undefined && debitStr !== null && debitStr !== '') {
+    const cleaned = debitStr.toString().trim().replace(/[$,]/g, '');
+    if (cleaned !== '') {
+      debit = parseFloat(cleaned);
+      if (isNaN(debit)) debit = 0;
+    }
+  }
+
+  if (creditStr !== undefined && creditStr !== null && creditStr !== '') {
+    const cleaned = creditStr.toString().trim().replace(/[$,]/g, '');
+    if (cleaned !== '') {
+      credit = parseFloat(cleaned);
+      if (isNaN(credit)) credit = 0;
+    }
+  }
+
+  console.log(`Capital One row ${index + 1} parsed:`, { debit, credit });
 
   // Capital One shows debits and credits in separate columns
+  // Debits are expenses (negative), Credits are payments/refunds (positive)
   const amount = credit > 0 ? credit : -debit;
 
+  console.log(`Capital One row ${index + 1} final amount:`, amount);
+
   if (amount === 0) {
+    console.warn(`Skipping Capital One row ${index + 1}: Amount is zero`);
     return null;
   }
 
@@ -460,29 +533,52 @@ const bankFormats: BankCSVFormat[] = [
     parse: parseAppleCardRow,
   },
   {
-    name: 'USAA',
+    name: 'Capital One',
     detect: (headers) => {
       const headerStr = headers.join(',').toLowerCase();
-      return headerStr.includes('date') &&
-             (headerStr.includes('description') || headerStr.includes('memo')) &&
-             headerStr.includes('amount');
+      // Capital One has separate Debit and Credit columns (must check before Chase)
+      return (headerStr.includes('transaction date') || headerStr.includes('posted date')) &&
+             headerStr.includes('debit') &&
+             headerStr.includes('credit');
     },
-    parse: parseUSAARow,
+    parse: parseCapitalOneRow,
   },
   {
     name: 'Chase',
     detect: (headers) => {
       const headerStr = headers.join(',').toLowerCase();
-      return headerStr.includes('transaction date') ||
+      // Chase has "Transaction Date" or "Posting Date" (more specific than just "Date")
+      // Must NOT have Debit/Credit columns (that's Capital One)
+      return (headerStr.includes('transaction date') ||
              headerStr.includes('posting date') ||
-             (headerStr.includes('post date') && headerStr.includes('description'));
+             (headerStr.includes('post date') && headerStr.includes('description'))) &&
+             !headerStr.includes('debit') &&
+             !headerStr.includes('credit');
     },
     parse: parseChaseRow,
+  },
+  {
+    name: 'USAA',
+    detect: (headers) => {
+      const headerStr = headers.join(',').toLowerCase();
+      // USAA has "Date" (not "Transaction Date"), "Description", "Amount", and often "Original Description"
+      // Make it more specific to avoid matching other banks
+      return headerStr.includes('date') &&
+             !headerStr.includes('transaction date') && // Not Chase
+             !headerStr.includes('posting date') && // Not Chase
+             !headerStr.includes('post date') && // Not Chase/BofA
+             (headerStr.includes('description') || headerStr.includes('memo')) &&
+             headerStr.includes('amount') &&
+             !headerStr.includes('debit') && // Not Capital One
+             !headerStr.includes('credit'); // Not Capital One
+    },
+    parse: parseUSAARow,
   },
   {
     name: 'Bank of America',
     detect: (headers) => {
       const headerStr = headers.join(',').toLowerCase();
+      // BofA has "Running Bal" which is unique
       return (headerStr.includes('posted date') || headerStr.includes('date')) &&
              (headerStr.includes('payee') || headerStr.includes('description')) &&
              headerStr.includes('amount') &&
@@ -494,22 +590,13 @@ const bankFormats: BankCSVFormat[] = [
     name: 'Wells Fargo',
     detect: (headers) => {
       const headerStr = headers.join(',').toLowerCase();
+      // Wells Fargo has "Check Number" column which is unique
       return headerStr.includes('date') &&
              headerStr.includes('description') &&
              headerStr.includes('amount') &&
              headerStr.includes('check number');
     },
     parse: parseWellsFargoRow,
-  },
-  {
-    name: 'Capital One',
-    detect: (headers) => {
-      const headerStr = headers.join(',').toLowerCase();
-      return (headerStr.includes('transaction date') || headerStr.includes('posted date')) &&
-             headerStr.includes('debit') &&
-             headerStr.includes('credit');
-    },
-    parse: parseCapitalOneRow,
   },
 ];
 

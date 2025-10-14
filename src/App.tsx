@@ -7,7 +7,6 @@ import { RecurringSuggestions } from './components/RecurringSuggestions';
 import { Projections } from './components/Projections';
 import { DebtsTracker } from './components/DebtsTracker';
 import { ICloudSync } from './components/ICloudSync';
-import { AccountSelector } from './components/AccountSelector';
 import { AccountManagement } from './components/AccountManagement';
 import { SpendingCharts } from './components/SpendingCharts';
 import { MerchantManagement } from './components/MerchantManagement';
@@ -287,6 +286,11 @@ function App() {
     setTransactions(transactions.filter(t => t.id !== id));
   };
 
+  const handleDeleteMultipleTransactions = (ids: string[]) => {
+    const idsSet = new Set(ids);
+    setTransactions(transactions.filter(t => !idsSet.has(t.id)));
+  };
+
   const handleUpdateTransaction = (transaction: Transaction) => {
     // If it's a projected transaction (id starts with 'proj-'), store all state separately
     if (transaction.id.startsWith('proj-')) {
@@ -502,23 +506,84 @@ function App() {
       <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
         <div className="max-w-7xl mx-auto px-3">
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
-            <div className="mb-3">
-              <AccountSelector
-                accounts={accounts}
-                activeAccountId={activeAccountId}
-                onSelectAccount={handleSelectAccount}
-                onManageAccounts={() => setShowAccountManagement(true)}
-              />
+            {/* Account Balance Buttons Row */}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1 flex-wrap">
+                {accounts.map(acc => {
+                  // Calculate balance for this account
+                  const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                  const accBalance = accTransactions.length > 0
+                    ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                    : acc.availableBalance || 0;
+
+                  return (
+                    <button
+                      key={acc.id}
+                      onClick={() => handleSelectAccount(acc.id)}
+                      className={`px-3 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[120px] ${
+                        acc.id === activeAccountId
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white shadow-lg'
+                          : 'bg-gray-700/50 hover:bg-gray-700 text-gray-300'
+                      }`}
+                      title={`${acc.name} - ${acc.institution}`}
+                    >
+                      <span className="text-[10px] opacity-80">{acc.name}</span>
+                      <span className="text-base font-bold text-white mt-0.5">
+                        ${accBalance.toFixed(2)}
+                      </span>
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setShowAccountManagement(true)}
+                  className="px-3 py-2 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-all font-medium text-xs flex items-center justify-center min-w-[40px] h-[52px]"
+                  title="Manage Accounts"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </button>
+              </div>
+              {iCloudDirHandle && (
+                <button
+                  onClick={handleQuickSync}
+                  disabled={isSyncing}
+                  className="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all font-medium text-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
+                  title="Sync to iCloud Drive"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                  </svg>
+                  {isSyncing ? 'Syncing...' : 'Sync'}
+                </button>
+              )}
             </div>
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <h1 className="text-xl font-bold text-white">{account?.name || 'No Account'}</h1>
-                <p className="text-gray-400 text-xs mt-1 flex items-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
-                  {account?.institution} •••• {account?.accountNumber.slice(-4)}
-                </p>
+
+            {/* Account Info Row */}
+            <div className="flex items-center justify-between gap-4 mb-3 pb-3 border-b border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div>
+                    <h1 className="text-lg font-bold text-white">{account?.name || 'No Account'}</h1>
+                    <p className="text-gray-400 text-xs flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                      {account?.institution} •••• {account?.accountNumber.slice(-4)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowAccountManagement(true)}
+                    className="px-2 py-1 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-all text-xs flex items-center gap-1"
+                    title="Manage Account"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Manage
+                  </button>
+                </div>
                 {iCloudFolderPath && (
-                  <p className="text-blue-400 text-xs mt-1 flex items-center gap-1">
+                  <p className="text-blue-400 text-xs flex items-center gap-1">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
                     </svg>
@@ -527,91 +592,43 @@ function App() {
                 )}
               </div>
               <div className="flex items-center gap-3">
-                {iCloudDirHandle && (
-                  <button
-                    onClick={handleQuickSync}
-                    disabled={isSyncing}
-                    className="px-3 py-1.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                    title="Sync to iCloud Drive"
-                  >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
-                    </svg>
-                    {isSyncing ? 'Syncing...' : 'Sync to iCloud'}
-                  </button>
+                {account?.accountType === 'credit_card' && account.creditLimit && (
+                  <div className="flex gap-2 text-xs">
+                    <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
+                      <p className="text-gray-400 text-[10px]">Credit Limit</p>
+                      <p className="text-white font-semibold">${account.creditLimit.toLocaleString()}</p>
+                    </div>
+                    <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
+                      <p className="text-gray-400 text-[10px]">Available</p>
+                      <p className="text-green-400 font-semibold">${(account.creditLimit - currentBalance).toLocaleString()}</p>
+                    </div>
+                  </div>
+                )}
+                {account?.accountType === 'credit_card' && account.apr && account.statementDueDate && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <p className="text-gray-400">
+                      APR: {account.apr}%
+                    </p>
+                    <span className="text-gray-600">•</span>
+                    <p className="text-orange-400">
+                      Due: {getNextDueDate(account.statementDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </p>
+                  </div>
                 )}
                 <button
                   onClick={handleAdjustBalance}
-                  className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium text-sm"
+                  className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all font-medium text-xs"
                   title="Adjust balance to match your bank"
                 >
                   Adjust Balance
                 </button>
-                <div className="flex items-center gap-2 bg-gray-700/50 px-3 py-1.5 rounded-lg border border-gray-600">
-                  <input
-                    type="checkbox"
-                    id="showProjectionsHeader"
-                    checked={showProjections}
-                    onChange={(e) => setShowProjections(e.target.checked)}
-                    className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
-                  />
-                  <label htmlFor="showProjectionsHeader" className="text-gray-300 text-sm font-medium cursor-pointer">
-                    Show Projected
-                  </label>
-                </div>
-                {account?.accountType === 'credit_card' ? (
-                  // Credit Card Display
-                  <div className="text-right">
-                    <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 px-4 py-2 rounded-xl border border-red-500/30 mb-2">
-                      <p className="text-xs text-gray-400 mb-0.5">Current Balance</p>
-                      <p className={`text-2xl font-bold ${currentBalance > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        {currentBalance > 0 ? '-' : ''}${Math.abs(currentBalance).toFixed(2)}
-                      </p>
-                      <div className="flex items-center justify-end gap-2 mt-0.5">
-                        {account.apr && (
-                          <p className="text-[10px] text-gray-400">
-                            APR: {account.apr}%
-                          </p>
-                        )}
-                        {account.statementDueDate && (
-                          <>
-                            {account.apr && <span className="text-gray-600">•</span>}
-                            <p className="text-[10px] text-orange-400">
-                              Due: {getNextDueDate(account.statementDueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {account.creditLimit && (
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
-                          <p className="text-gray-400 text-[10px]">Credit Limit</p>
-                          <p className="text-white font-semibold">${account.creditLimit.toLocaleString()}</p>
-                        </div>
-                        <div className="bg-gray-700/50 px-2 py-1 rounded-lg">
-                          <p className="text-gray-400 text-[10px]">Available</p>
-                          <p className="text-green-400 font-semibold">${(account.creditLimit - currentBalance).toLocaleString()}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  // Regular Account Display
-                  <div className="text-right bg-gradient-to-br from-blue-500/20 to-purple-500/20 px-4 py-2 rounded-xl border border-blue-500/30">
-                    <p className="text-xs text-gray-400 mb-0.5">Current Balance</p>
-                    <p className="text-2xl font-bold text-white">
-                      ${currentBalance.toFixed(2)}
-                    </p>
-                  </div>
-                )}
               </div>
             </div>
 
             {/* Tabs Navigation */}
-            <div className="mt-3 pt-3 border-t border-gray-700">
-              <nav className="flex gap-1.5">
-
+            <div>
+              <nav className="flex gap-1.5 items-center justify-between">
+                <div className="flex gap-1.5">
             <button
               onClick={() => setCurrentTab('account')}
               className={`px-4 py-2 text-sm font-medium rounded-xl transition-all ${
@@ -692,6 +709,19 @@ function App() {
             >
               iCloud Sync
             </button>
+                </div>
+                <div className="flex items-center gap-2 bg-gray-700/50 px-3 py-1.5 rounded-lg border border-gray-600">
+                  <input
+                    type="checkbox"
+                    id="showProjectionsHeader"
+                    checked={showProjections}
+                    onChange={(e) => setShowProjections(e.target.checked)}
+                    className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
+                  />
+                  <label htmlFor="showProjectionsHeader" className="text-gray-300 text-sm font-medium cursor-pointer whitespace-nowrap">
+                    Show Projected
+                  </label>
+                </div>
               </nav>
             </div>
           </div>
@@ -703,27 +733,27 @@ function App() {
         <div className="bg-gray-800 rounded-2xl shadow-xl p-4 border border-gray-700">
             {/* Account Info Tab */}
             {currentTab === 'account' && (
-              <div className="space-y-6">
-                <h2 className="text-2xl font-bold text-white">Account Information</h2>
+              <div className="space-y-4">
+                <h2 className="text-xl font-bold text-white">Account Information</h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30 backdrop-blur-sm">
-                    <h3 className="text-sm font-medium text-blue-300 mb-2">Current Balance</h3>
-                    <p className="text-3xl font-bold text-white">
+                <div className="flex justify-center gap-2">
+                  <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-3xl p-2 border border-blue-500/30 backdrop-blur-sm inline-flex flex-col items-center">
+                    <h3 className="text-xs font-medium text-blue-300 mb-1">Current Balance</h3>
+                    <p className="text-2xl font-bold text-white whitespace-nowrap">
                       ${currentBalance.toFixed(2)}
                     </p>
                   </div>
-                  <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl p-6 border border-green-500/30 backdrop-blur-sm">
-                    <h3 className="text-sm font-medium text-green-300 mb-2">
+                  <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-3xl p-2 border border-green-500/30 backdrop-blur-sm inline-flex flex-col items-center">
+                    <h3 className="text-xs font-medium text-green-300 mb-1">
                       Projected Balance (60 days)
                     </h3>
-                    <p className="text-3xl font-bold text-white">
+                    <p className="text-2xl font-bold text-white whitespace-nowrap">
                       ${projectedBalance.toFixed(2)}
                     </p>
                   </div>
-                  <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl p-6 border border-purple-500/30 backdrop-blur-sm">
-                    <h3 className="text-sm font-medium text-purple-300 mb-2">Transactions</h3>
-                    <p className="text-3xl font-bold text-white">{transactions.length}</p>
+                  <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-3xl p-2 border border-purple-500/30 backdrop-blur-sm inline-flex flex-col items-center">
+                    <h3 className="text-xs font-medium text-purple-300 mb-1">Transactions</h3>
+                    <p className="text-2xl font-bold text-white whitespace-nowrap">{transactions.length}</p>
                   </div>
                 </div>
 
@@ -766,6 +796,7 @@ function App() {
                 transactions={allTransactions}
                 onAddTransaction={handleAddTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
+                onDeleteMultipleTransactions={handleDeleteMultipleTransactions}
                 onCreateRecurringBill={handleAddBill}
                 onUpdateTransaction={handleUpdateTransaction}
                 onDismissProjection={handleDismissProjection}

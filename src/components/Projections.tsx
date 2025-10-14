@@ -83,35 +83,35 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-2xl p-6 border border-blue-500/30">
-          <h3 className="text-sm font-medium text-blue-300 mb-2">Current Balance</h3>
-          <p className={`text-3xl font-bold ${currentBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+      <div className="flex justify-center gap-2">
+        <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-3xl p-2 border border-blue-500/30 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-blue-300 mb-1">Current Balance</h3>
+          <p className={`text-2xl font-bold whitespace-nowrap ${currentBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
             ${currentBalance.toFixed(2)}
           </p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl p-6 border border-green-500/30">
-          <h3 className="text-sm font-medium text-green-300 mb-2">Expected Income</h3>
-          <p className="text-3xl font-bold text-white">+${totalIncome.toFixed(2)}</p>
+        <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-3xl p-2 border border-green-500/30 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-green-300 mb-1">Expected Income</h3>
+          <p className="text-2xl font-bold text-white whitespace-nowrap">+${totalIncome.toFixed(2)}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 rounded-2xl p-6 border border-red-500/30">
-          <h3 className="text-sm font-medium text-red-300 mb-2">Expected Expenses</h3>
-          <p className="text-3xl font-bold text-white">-${totalExpenses.toFixed(2)}</p>
+        <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 rounded-3xl p-2 border border-red-500/30 inline-flex flex-col items-center">
+          <h3 className="text-xs font-medium text-red-300 mb-1">Expected Expenses</h3>
+          <p className="text-2xl font-bold text-white whitespace-nowrap">-${totalExpenses.toFixed(2)}</p>
         </div>
 
-        <div className={`bg-gradient-to-br rounded-2xl p-6 border ${
+        <div className={`bg-gradient-to-br rounded-3xl p-2 border inline-flex flex-col items-center ${
           netChange >= 0
             ? 'from-purple-500/20 to-purple-600/20 border-purple-500/30'
             : 'from-orange-500/20 to-orange-600/20 border-orange-500/30'
         }`}>
-          <h3 className={`text-sm font-medium mb-2 ${
+          <h3 className={`text-xs font-medium mb-1 ${
             netChange >= 0 ? 'text-purple-300' : 'text-orange-300'
           }`}>
             Projected End Balance
           </h3>
-          <p className={`text-3xl font-bold ${projectedEndBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+          <p className={`text-2xl font-bold whitespace-nowrap ${projectedEndBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
             ${projectedEndBalance.toFixed(2)}
           </p>
           <p className={`text-sm mt-1 ${netChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
