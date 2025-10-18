@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.0'; // Fixed summary tile wrapping by correcting div structure
+const VERSION = '1.7.1'; // Fixed projections tab to always show projections regardless of checkbox
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -1541,7 +1541,7 @@ function App() {
             {/* Projections Tab */}
             {currentTab === 'projections' && (
               <Projections
-                transactions={allTransactions}
+                transactions={allTransactionsWithProjections}
                 currentBalance={account?.availableBalance || 0}
               />
             )}

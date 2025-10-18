@@ -10,15 +10,20 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
   const [includeProjections, setIncludeProjections] = useState(true);
 
   // Filter for future projected transactions only (exclude pending transactions as they're treated as cleared)
+  // Show projections through the end of current month + 2 more months (3 months total)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // Calculate end date: last day of the month that is 2 months from now
+  const endDate = new Date(today.getFullYear(), today.getMonth() + 3, 0); // +3 months, day 0 = last day of previous month
+  endDate.setHours(23, 59, 59, 999);
 
   const allFutureTransactions = transactions
     .filter(t => {
       const txDate = new Date(t.date);
       txDate.setHours(0, 0, 0, 0);
-      // Only include transactions after today that are projected (not pending actual transactions)
-      return txDate > today && t.description.includes('(Projected)');
+      // Only include transactions after today and before endDate that are projected (not pending actual transactions)
+      return txDate > today && txDate <= endDate && t.description.includes('(Projected)');
     })
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
