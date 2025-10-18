@@ -28,7 +28,7 @@ import {
   saveICloudFolderPath,
   loadICloudFolderPath,
 } from './utils/storage';
-import { saveToICloud } from './utils/icloudStorage';
+import { saveToICloud, selectICloudFolder } from './utils/icloudStorage';
 import { generateProjections, calculateBalances, getNextOccurrence } from './utils/projections';
 import { parseCSV } from './utils/csvParser';
 import logo from './assets/downey-app-logo-header.png';
@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.6'; // Fixed projections generation to go through end of 2nd month out
+const VERSION = '1.7.7'; // Connect button now directly opens folder selection dialog
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -1388,11 +1388,19 @@ function App() {
                     Snapshot
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (iCloudDirHandle) {
                         handleQuickSync();
                       } else {
-                        setCurrentTab('sync');
+                        // Directly open the folder selection dialog
+                        const dirHandle = await selectICloudFolder();
+                        if (dirHandle) {
+                          setICloudDirHandle(dirHandle as FileSystemDirectoryHandle);
+                          // Get folder path for display
+                          const folderPath = dirHandle.name;
+                          setICloudFolderPath(folderPath);
+                          saveICloudFolderPath(folderPath);
+                        }
                       }
                     }}
                     disabled={isSyncing}
