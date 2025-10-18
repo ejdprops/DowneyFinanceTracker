@@ -33,12 +33,14 @@ import { generateProjections, calculateBalances, getNextOccurrence } from './uti
 import { parseCSV } from './utils/csvParser';
 import logo from './assets/downey-app-logo-header.png';
 
-// Declare global build timestamp injected by Vite
+// Declare global build timestamp and app owner injected by Vite
 declare const __BUILD_DATE__: string;
+declare const __APP_OWNER__: string;
 
-// Build timestamp - injected at build time
+// Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.7'; // Connect button now directly opens folder selection dialog
+const APP_OWNER = __APP_OWNER__;
+const VERSION = '1.8.0'; // Multi-build support for child instances (Ethan, Ac, Kendra)
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -871,9 +873,9 @@ function App() {
               <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-start">
                 <img
                   src={logo}
-                  alt="Downey Finance Tracker"
+                  alt={`${APP_OWNER}'s Finance Tracker`}
                   className="w-full h-full object-contain object-left-top"
-                  title="Downey Finance Tracker"
+                  title={`${APP_OWNER}'s Finance Tracker`}
                 />
               </div>
 
