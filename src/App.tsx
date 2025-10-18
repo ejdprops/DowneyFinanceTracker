@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.6.8'; // Fixed header wrapping with flex-nowrap and compact tiles
+const VERSION = '1.6.9'; // Fixed header with 145x145 containers for logo and summary
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -862,18 +862,18 @@ function App() {
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
             {/* 3-Column Flex Header Layout */}
             <div className="mb-3 flex flex-nowrap items-start gap-2">
-              {/* Left Column: Logo (absolute left, top aligned) */}
-              <div className="flex-shrink-0">
+              {/* Left Column: Logo (fixed size, top-left aligned) */}
+              <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-start">
                 <img
                   src={logo}
                   alt="Downey Finance Tracker"
-                  className="h-[90px] w-auto"
+                  className="w-full h-full object-contain object-left-top"
                   title="Downey Finance Tracker"
                 />
               </div>
 
               {/* Center Column: Account tiles (2 rows, centered, flexible) */}
-              <div className="flex-1 flex flex-col items-center justify-start min-w-0 overflow-hidden">
+              <div className="flex-1 flex flex-col items-center justify-center min-w-0 overflow-hidden">
                 {/* Checking/Savings Accounts Row */}
                 <div className="flex flex-wrap items-center justify-center gap-2 mb-2">
                 {accounts
@@ -1033,10 +1033,10 @@ function App() {
                 </div>
               </div>
 
-              {/* Right Column: Summary Tile (absolute right, top aligned) */}
-              <div className="flex-shrink-0 self-start">
-                <div className="bg-gray-700/50 rounded-lg px-4 py-2 border border-gray-600">
-                  <div className="space-y-2">
+              {/* Right Column: Summary Tile (fixed size, top-right aligned) */}
+              <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-end">
+                <div className="bg-gray-700/50 rounded-lg px-3 py-3 border border-gray-600 w-full h-full flex flex-col justify-center">
+                  <div className="space-y-3">
                     <div className="text-center">
                       <div className="text-xs text-gray-400 mb-1">Checking/Savings</div>
                       <div className="text-lg font-bold text-green-400">
