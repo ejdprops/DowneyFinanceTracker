@@ -89,7 +89,7 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
             const monthTransactions = groupedByMonth[monthKey];
             const [year, month] = monthKey.split('-');
             const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', {
-              month: 'long',
+              month: 'short',
               year: 'numeric',
             });
 
