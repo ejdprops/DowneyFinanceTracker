@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.4'; // Updated projections tab month format to match header
+const VERSION = '1.7.5'; // Changed to long month names and fixed projections date range
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -1152,7 +1152,7 @@ function App() {
                         <p className="text-gray-400 text-[10px]">{(() => {
                           const nextMonth = new Date();
                           nextMonth.setMonth(nextMonth.getMonth() + 1);
-                          return nextMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          return nextMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                         })()}</p>
                         <p className={`font-semibold ${(() => {
                           const today = new Date();
@@ -1182,7 +1182,7 @@ function App() {
                         <p className="text-gray-400 text-[10px]">{(() => {
                           const twoMonthsOut = new Date();
                           twoMonthsOut.setMonth(twoMonthsOut.getMonth() + 2);
-                          return twoMonthsOut.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                          return twoMonthsOut.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
                         })()}</p>
                         <p className={`font-semibold ${(() => {
                           const today = new Date();

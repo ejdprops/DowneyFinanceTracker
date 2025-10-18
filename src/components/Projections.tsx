@@ -10,13 +10,13 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
   const [includeProjections, setIncludeProjections] = useState(true);
 
   // Filter for future projected transactions only (exclude pending transactions as they're treated as cleared)
-  // Show projections through the end of current month + 2 more months (3 months total)
+  // Show projections through the end of the 2nd month out (current month + 2 more months = 3 months total)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   // Calculate end date: last day of the month that is 2 months from now
-  const endDate = new Date(today.getFullYear(), today.getMonth() + 3, 0); // +3 months, day 0 = last day of previous month
-  endDate.setHours(23, 59, 59, 999);
+  // today.getMonth() + 3 with day 0 = last day of the month 2 months out
+  const endDate = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
 
   const allFutureTransactions = transactions
     .filter(t => {
@@ -89,7 +89,7 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
             const monthTransactions = groupedByMonth[monthKey];
             const [year, month] = monthKey.split('-');
             const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', {
-              month: 'short',
+              month: 'long',
               year: 'numeric',
             });
 
