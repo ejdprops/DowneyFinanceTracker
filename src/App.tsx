@@ -31,14 +31,14 @@ import {
 import { saveToICloud } from './utils/icloudStorage';
 import { generateProjections, calculateBalances, getNextOccurrence } from './utils/projections';
 import { parseCSV } from './utils/csvParser';
-import logo from './assets/downey-main-logo.png';
+import logo from './assets/downey-text-logo.png';
 
 // Declare global build timestamp injected by Vite
 declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.6.2'; // Fixed summary box positioning, updated logo to downey-main-logo
+const VERSION = '1.6.3'; // 3-column grid header with downey-text-logo
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -860,18 +860,20 @@ function App() {
       <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
         <div className="max-w-7xl mx-auto px-3">
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
-            {/* Logo and Account Balance Buttons */}
-            <div className="mb-3 relative flex items-center gap-3">
-              {/* Logo on the left */}
-              <img
-                src={logo}
-                alt="Downey Finance Tracker"
-                className="h-[90px] w-auto flex-shrink-0"
-                title="Downey Finance Tracker"
-              />
+            {/* 3-Column Grid Header Layout */}
+            <div className="mb-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
+              {/* Left Column: Logo (fixed width) */}
+              <div className="flex-shrink-0">
+                <img
+                  src={logo}
+                  alt="Downey Finance Tracker"
+                  className="h-[90px] w-auto"
+                  title="Downey Finance Tracker"
+                />
+              </div>
 
-              {/* Account tiles */}
-              <div className="flex-1 min-w-0">
+              {/* Center Column: Account tiles (flexible, centered) */}
+              <div className="flex flex-col items-center justify-center">
                 {/* Checking/Savings Accounts Row */}
                 <div className="flex items-center justify-center gap-2 mb-2">
                 {accounts
@@ -1031,10 +1033,8 @@ function App() {
                 </div>
               </div>
 
-              </div>
-
-              {/* Summary Tile - Positioned on the right */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 flex-shrink-0">
+              {/* Right Column: Summary Tile (fixed width) */}
+              <div className="flex-shrink-0">
                 <div className="bg-gray-700/50 rounded-lg px-4 py-2 border border-gray-600">
                   <div className="space-y-2">
                     <div className="text-center">
@@ -1076,6 +1076,7 @@ function App() {
                 </div>
               </div>
             </div>
+          </div>
 
             {/* Account Info Row */}
             <div className="mb-3 pb-3 border-b border-gray-700">
