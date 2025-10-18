@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.5'; // Changed to long month names and fixed projections date range
+const VERSION = '1.7.6'; // Fixed projections generation to go through end of 2nd month out
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -777,7 +777,12 @@ function App() {
       return calculateBalances(accountTransactions, 0);
     }
 
-    const projections = generateProjections(accountRecurringBills, 60)
+    // Calculate days to end of 2nd month out (current month + 2 more months)
+    const today = new Date();
+    const endOfTwoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+    const daysAhead = Math.ceil((endOfTwoMonthsOut.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    const projections = generateProjections(accountRecurringBills, daysAhead)
       .filter(projection => {
         // Filter out dismissed projections
         if (dismissedProjections.has(projection.id)) {

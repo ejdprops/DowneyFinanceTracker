@@ -15,7 +15,8 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
   today.setHours(0, 0, 0, 0);
 
   // Calculate end date: last day of the month that is 2 months from now
-  // today.getMonth() + 3 with day 0 = last day of the month 2 months out
+  // Example: If today is Oct 18, we want through end of Dec (Oct + 1 = Nov, Oct + 2 = Dec)
+  // Using today.getMonth() + 2 gives us the 2nd month out, then +1 month with day 0 = last day of that month
   const endDate = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
 
   const allFutureTransactions = transactions
