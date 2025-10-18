@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.2'; // Updated projections tab to show summary in each month section
+const VERSION = '1.7.3'; // Changed account header projections to show end-of-month balances
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -1123,50 +1123,88 @@ function App() {
                         </p>
                       </div>
                       <div className="bg-gray-700/50 px-2.5 py-1.25 rounded-lg">
-                        <p className="text-gray-400 text-[10px]">30-Day Projected</p>
+                        <p className="text-gray-400 text-[10px]">End of Month</p>
                         <p className={`font-semibold ${(() => {
-                          const thirtyDayTransactions = allTransactionsWithProjections.filter(t => {
-                            const daysDiff = Math.ceil((t.date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                            return daysDiff >= 0 && daysDiff <= 30;
+                          const today = new Date();
+                          const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+                          const endOfMonthTransactions = allTransactionsWithProjections.filter(t => {
+                            return t.date <= endOfMonth;
                           });
-                          const thirtyDayBalance = thirtyDayTransactions.length > 0
-                            ? thirtyDayTransactions[thirtyDayTransactions.length - 1].balance
+                          const endOfMonthBalance = endOfMonthTransactions.length > 0
+                            ? endOfMonthTransactions[endOfMonthTransactions.length - 1].balance
                             : currentBalance;
-                          return thirtyDayBalance >= 0 ? 'text-green-400' : 'text-red-400';
+                          return endOfMonthBalance >= 0 ? 'text-green-400' : 'text-red-400';
                         })()}`}>
                           ${(() => {
-                            const thirtyDayTransactions = allTransactionsWithProjections.filter(t => {
-                              const daysDiff = Math.ceil((t.date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                              return daysDiff >= 0 && daysDiff <= 30;
+                            const today = new Date();
+                            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+                            const endOfMonthTransactions = allTransactionsWithProjections.filter(t => {
+                              return t.date <= endOfMonth;
                             });
-                            const thirtyDayBalance = thirtyDayTransactions.length > 0
-                              ? thirtyDayTransactions[thirtyDayTransactions.length - 1].balance
+                            const endOfMonthBalance = endOfMonthTransactions.length > 0
+                              ? endOfMonthTransactions[endOfMonthTransactions.length - 1].balance
                               : currentBalance;
-                            return thirtyDayBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            return endOfMonthBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                           })()}
                         </p>
                       </div>
                       <div className="bg-gray-700/50 px-2.5 py-1.25 rounded-lg">
-                        <p className="text-gray-400 text-[10px]">60-Day Projected</p>
+                        <p className="text-gray-400 text-[10px]">{(() => {
+                          const nextMonth = new Date();
+                          nextMonth.setMonth(nextMonth.getMonth() + 1);
+                          return nextMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                        })()}</p>
                         <p className={`font-semibold ${(() => {
-                          const sixtyDayTransactions = allTransactionsWithProjections.filter(t => {
-                            const daysDiff = Math.ceil((t.date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                            return daysDiff >= 0 && daysDiff <= 60;
+                          const today = new Date();
+                          const endOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59, 999);
+                          const endOfNextMonthTransactions = allTransactionsWithProjections.filter(t => {
+                            return t.date <= endOfNextMonth;
                           });
-                          const sixtyDayBalance = sixtyDayTransactions.length > 0
-                            ? sixtyDayTransactions[sixtyDayTransactions.length - 1].balance
+                          const endOfNextMonthBalance = endOfNextMonthTransactions.length > 0
+                            ? endOfNextMonthTransactions[endOfNextMonthTransactions.length - 1].balance
                             : currentBalance;
-                          return sixtyDayBalance >= 0 ? 'text-green-400' : 'text-red-400';
+                          return endOfNextMonthBalance >= 0 ? 'text-green-400' : 'text-red-400';
                         })()}`}>
                           ${(() => {
-                            const sixtyDayTransactions = allTransactionsWithProjections.filter(t => {
-                              const daysDiff = Math.ceil((t.date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                              return daysDiff >= 0 && daysDiff <= 60;
+                            const today = new Date();
+                            const endOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59, 999);
+                            const endOfNextMonthTransactions = allTransactionsWithProjections.filter(t => {
+                              return t.date <= endOfNextMonth;
                             });
-                            const sixtyDayBalance = sixtyDayTransactions.length > 0
-                              ? sixtyDayTransactions[sixtyDayTransactions.length - 1].balance
+                            const endOfNextMonthBalance = endOfNextMonthTransactions.length > 0
+                              ? endOfNextMonthTransactions[endOfNextMonthTransactions.length - 1].balance
                               : currentBalance;
-                            return sixtyDayBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            return endOfNextMonthBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                          })()}
+                        </p>
+                      </div>
+                      <div className="bg-gray-700/50 px-2.5 py-1.25 rounded-lg">
+                        <p className="text-gray-400 text-[10px]">{(() => {
+                          const twoMonthsOut = new Date();
+                          twoMonthsOut.setMonth(twoMonthsOut.getMonth() + 2);
+                          return twoMonthsOut.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                        })()}</p>
+                        <p className={`font-semibold ${(() => {
+                          const today = new Date();
+                          const endOfTwoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+                          const endOfTwoMonthsOutTransactions = allTransactionsWithProjections.filter(t => {
+                            return t.date <= endOfTwoMonthsOut;
+                          });
+                          const endOfTwoMonthsOutBalance = endOfTwoMonthsOutTransactions.length > 0
+                            ? endOfTwoMonthsOutTransactions[endOfTwoMonthsOutTransactions.length - 1].balance
+                            : currentBalance;
+                          return endOfTwoMonthsOutBalance >= 0 ? 'text-green-400' : 'text-red-400';
+                        })()}`}>
+                          ${(() => {
+                            const today = new Date();
+                            const endOfTwoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+                            const endOfTwoMonthsOutTransactions = allTransactionsWithProjections.filter(t => {
+                              return t.date <= endOfTwoMonthsOut;
+                            });
+                            const endOfTwoMonthsOutBalance = endOfTwoMonthsOutTransactions.length > 0
+                              ? endOfTwoMonthsOutTransactions[endOfTwoMonthsOutTransactions.length - 1].balance
+                              : currentBalance;
+                            return endOfTwoMonthsOutBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                           })()}
                         </p>
                       </div>
