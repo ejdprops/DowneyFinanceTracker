@@ -21,8 +21,8 @@ export const loadTransactions = (): Transaction[] => {
   const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
   if (!data) return [];
 
-  const parsed = JSON.parse(data);
-  return parsed.map((t: any) => ({
+  const parsed = JSON.parse(data) as Array<Omit<Transaction, 'date'> & { date: string }>;
+  return parsed.map((t) => ({
     ...t,
     date: new Date(t.date),
   }));
@@ -71,8 +71,8 @@ export const loadRecurringBills = (): RecurringBill[] => {
   const data = localStorage.getItem(STORAGE_KEYS.RECURRING_BILLS);
   if (!data) return [];
 
-  const parsed = JSON.parse(data);
-  return parsed.map((b: any) => {
+  const parsed = JSON.parse(data) as Array<Omit<RecurringBill, 'nextDueDate'> & { nextDueDate: string | Date }>;
+  return parsed.map((b) => {
     let nextDueDate: Date;
 
     if (typeof b.nextDueDate === 'string') {
@@ -207,8 +207,8 @@ export const loadMerchantMappings = (): MerchantMapping[] => {
   const data = localStorage.getItem(STORAGE_KEYS.MERCHANT_MAPPINGS);
   if (!data) return [];
 
-  const parsed = JSON.parse(data);
-  return parsed.map((m: any) => ({
+  const parsed = JSON.parse(data) as Array<Omit<MerchantMapping, 'createdAt' | 'updatedAt'> & { createdAt: string; updatedAt: string }>;
+  return parsed.map((m) => ({
     ...m,
     createdAt: new Date(m.createdAt),
     updatedAt: new Date(m.updatedAt),

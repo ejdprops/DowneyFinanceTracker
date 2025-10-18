@@ -8,10 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "npm run build && gh-pages -d dist"
+    "deploy": "npm run build && gh-pages -d dist",
+    "download:usaa": "node automation/usaa-download.js",
+    "download:usaa-checking": "node automation/usaa-checking.js",
+    "download:usaa-creditcard": "node automation/usaa-creditcard.js"
   },
   "dependencies": {
     "fuse.js": "^7.1.0",
+    "html2canvas": "^1.4.1",
     "papaparse": "^5.5.3",
     "pdfjs-dist": "^5.4.296",
     "react": "^19.1.1",
@@ -21,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@playwright/test": "^1.56.0",
     "@types/node": "^24.6.0",
     "@types/papaparse": "^5.3.16",
     "@types/react": "^19.1.16",
@@ -33,6 +38,7 @@
     "eslint-plugin-react-refresh": "^0.4.22",
     "gh-pages": "^6.3.0",
     "globals": "^16.4.0",
+    "playwright": "^1.56.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "typescript": "~5.9.3",

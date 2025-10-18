@@ -46,20 +46,23 @@ export const RecurringBillsManager: React.FC<RecurringBillsManagerProps> = ({
       case 'amount':
         comparison = Math.abs(a.amount) - Math.abs(b.amount);
         break;
-      case 'frequency':
+      case 'frequency': {
         const freqOrder = { weekly: 1, biweekly: 2, monthly: 3, quarterly: 4, yearly: 5 };
         comparison = freqOrder[a.frequency] - freqOrder[b.frequency];
         break;
-      case 'nextDueDate':
+      }
+      case 'nextDueDate': {
         const aTime = a.nextDueDate instanceof Date ? a.nextDueDate.getTime() : 0;
         const bTime = b.nextDueDate instanceof Date ? b.nextDueDate.getTime() : 0;
         comparison = aTime - bTime;
         break;
-      case 'dayOfMonth':
+      }
+      case 'dayOfMonth': {
         const aDay = a.dayOfMonth || 999;
         const bDay = b.dayOfMonth || 999;
         comparison = aDay - bDay;
         break;
+      }
     }
 
     return sortDirection === 'asc' ? comparison : -comparison;
@@ -320,6 +323,8 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
     category: bill?.category || '',
     amount: bill ? Math.abs(bill.amount).toString() : '',
     isExpense: bill ? bill.amount < 0 : true,
+    amountType: bill?.amountType || 'fixed' as 'fixed' | 'variable',
+    amountTolerance: bill?.amountTolerance?.toString() || '10',
     frequency: bill?.frequency || 'monthly' as RecurringBill['frequency'],
     dayOfMonth: bill?.dayOfMonth?.toString() || '',
     dayOfWeek: bill?.dayOfWeek?.toString() || '',
@@ -339,6 +344,8 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
       description: formData.description,
       category: formData.category,
       amount,
+      amountType: formData.amountType,
+      amountTolerance: formData.amountType === 'variable' ? parseFloat(formData.amountTolerance) : undefined,
       frequency: formData.frequency,
       dayOfMonth: formData.monthlyType === 'dayOfMonth' && formData.dayOfMonth ? parseInt(formData.dayOfMonth) : undefined,
       dayOfWeek: formData.monthlyType === 'weekday' && formData.dayOfWeek ? parseInt(formData.dayOfWeek) : (formData.frequency === 'weekly' && formData.dayOfWeek ? parseInt(formData.dayOfWeek) : undefined),
@@ -405,6 +412,37 @@ const BillForm: React.FC<BillFormProps> = ({ bill, onSave, onCancel }) => {
                 <option value="income">Income</option>
               </select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Amount Type</label>
+              <select
+                value={formData.amountType}
+                onChange={(e) => setFormData({ ...formData, amountType: e.target.value as 'fixed' | 'variable' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="fixed">Fixed</option>
+                <option value="variable">Variable</option>
+              </select>
+            </div>
+
+            {formData.amountType === 'variable' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tolerance (%)</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={formData.amountTolerance}
+                  onChange={(e) => setFormData({ ...formData, amountTolerance: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="10"
+                />
+                <p className="text-xs text-gray-500 mt-1">±{formData.amountTolerance}% variance</p>
+              </div>
+            )}
           </div>
 
           <div>

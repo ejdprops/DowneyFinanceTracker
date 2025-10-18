@@ -44,7 +44,7 @@ const reviveDates = (data: AppData): AppData => {
       ...t,
       date: new Date(t.date),
     })),
-    recurringBills: data.recurringBills.map((b: any) => {
+    recurringBills: data.recurringBills.map((b: Omit<RecurringBill, 'nextDueDate'> & { nextDueDate: string | Date }) => {
       let nextDueDate: Date;
 
       if (typeof b.nextDueDate === 'string') {
@@ -107,9 +107,9 @@ export const saveToICloud = async (
 ): Promise<boolean> => {
   try {
     // Request permission if needed
-    const permission = await (dirHandle as any).queryPermission({ mode: 'readwrite' });
+    const permission = await (dirHandle as FileSystemDirectoryHandle & { queryPermission: (options: { mode: string }) => Promise<string> }).queryPermission({ mode: 'readwrite' });
     if (permission !== 'granted') {
-      const newPermission = await (dirHandle as any).requestPermission({ mode: 'readwrite' });
+      const newPermission = await (dirHandle as FileSystemDirectoryHandle & { requestPermission: (options: { mode: string }) => Promise<string> }).requestPermission({ mode: 'readwrite' });
       if (newPermission !== 'granted') {
         alert('Permission denied. Please grant access to save data.');
         return false;
@@ -147,9 +147,9 @@ export const loadFromICloud = async (
 ): Promise<AppData | null> => {
   try {
     // Request permission if needed
-    const permission = await (dirHandle as any).queryPermission({ mode: 'read' });
+    const permission = await (dirHandle as FileSystemDirectoryHandle & { queryPermission: (options: { mode: string }) => Promise<string> }).queryPermission({ mode: 'read' });
     if (permission !== 'granted') {
-      const newPermission = await (dirHandle as any).requestPermission({ mode: 'read' });
+      const newPermission = await (dirHandle as FileSystemDirectoryHandle & { requestPermission: (options: { mode: string }) => Promise<string> }).requestPermission({ mode: 'read' });
       if (newPermission !== 'granted') {
         alert('Permission denied. Please grant access to load data.');
         return null;

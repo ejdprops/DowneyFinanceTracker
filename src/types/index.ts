@@ -1,6 +1,7 @@
 export interface Transaction {
   id: string;
   accountId?: string; // Links transaction to specific account (optional for backward compatibility)
+  recurringBillId?: string; // Links transaction to recurring bill (for projected and matched transactions)
   date: Date;
   description: string;
   category: string;
@@ -35,6 +36,8 @@ export interface RecurringBill {
   description: string;
   category: string;
   amount: number;
+  amountType?: 'fixed' | 'variable'; // Whether amount is fixed or can vary
+  amountTolerance?: number; // For variable amounts: percentage tolerance (e.g., 10 = ±10%)
   frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
   dayOfMonth?: number; // For monthly bills (1-31)
   dayOfWeek?: number; // For weekly bills (0-6: Sunday-Saturday)

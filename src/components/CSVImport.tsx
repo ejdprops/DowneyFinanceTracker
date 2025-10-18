@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
 import { parseCSV } from '../utils/csvParser';
-import type { ParsedCSVData } from '../types';
+import type { ParsedCSVData, Account } from '../types';
 
 interface CSVImportProps {
   onImportComplete: (data: ParsedCSVData, currentBalance?: number) => void;
+  account?: Account; // Current active account
 }
 
-export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
+export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete, account }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('Processing file...');
@@ -35,7 +36,7 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete }) => {
         const { parseBankStatementPDF } = await import('../utils/pdfParser');
         data = await parseBankStatementPDF(file);
       } else {
-        data = await parseCSV(file);
+        data = await parseCSV(file, account?.accountType);
       }
 
       // Store parsed data and show balance prompt

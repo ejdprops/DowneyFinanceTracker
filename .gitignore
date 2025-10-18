@@ -28,3 +28,10 @@ dist-ssr
 *.sqlite
 *.sqlite3
 financial-data.json
+
+# Downloaded CSV files (sensitive financial data)
+downloads/
+*.csv
+
+# Playwright browser data (contains login sessions)
+.playwright-data/

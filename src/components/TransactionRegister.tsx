@@ -11,6 +11,8 @@ interface TransactionRegisterProps {
   onUpdateTransaction: (transaction: Transaction) => void;
   onDismissProjection: (id: string) => void;
   recurringBills: RecurringBill[];
+  showProjections: boolean;
+  onShowProjectionsChange: (show: boolean) => void;
 }
 
 export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
@@ -22,6 +24,8 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   onUpdateTransaction,
   onDismissProjection,
   recurringBills,
+  showProjections,
+  onShowProjectionsChange,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,15 +157,16 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const handleSaveEdit = (transaction: Transaction) => {
     if (!editingField) return;
 
-    let updates: Partial<Transaction> = {};
+    const updates: Partial<Transaction> = {};
 
     switch (editingField.field) {
-      case 'date':
+      case 'date': {
         const newDate = parseDate(editValue);
         if (!isNaN(newDate.getTime())) {
           updates.date = newDate;
         }
         break;
+      }
       case 'description':
         if (editValue.trim()) {
           updates.description = editValue.trim();
@@ -172,13 +177,14 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
           updates.category = editValue.trim();
         }
         break;
-      case 'amount':
+      case 'amount': {
         const newAmount = parseFloat(editValue);
         if (!isNaN(newAmount)) {
           // Preserve the sign (debit/credit)
           updates.amount = transaction.amount < 0 ? -Math.abs(newAmount) : Math.abs(newAmount);
         }
         break;
+      }
     }
 
     if (Object.keys(updates).length > 0) {
@@ -259,12 +265,26 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
     <div className="space-y-3">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-white">Transaction History</h2>
-        <button
-          onClick={() => setShowAddForm(true)}
-          className="px-3 py-1.5 text-sm bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all shadow-lg font-medium"
-        >
-          + Add Transaction
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-gray-700/50 px-3 py-1.5 rounded-lg border border-gray-600">
+            <input
+              type="checkbox"
+              id="showProjectionsRegister"
+              checked={showProjections}
+              onChange={(e) => onShowProjectionsChange(e.target.checked)}
+              className="h-4 w-4 text-blue-500 rounded bg-gray-700 border-gray-600"
+            />
+            <label htmlFor="showProjectionsRegister" className="text-gray-300 text-sm font-medium cursor-pointer whitespace-nowrap">
+              Show Projected
+            </label>
+          </div>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-3 py-1.5 text-sm bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:from-blue-600 hover:to-purple-600 transition-all shadow-lg font-medium"
+          >
+            + Add Transaction
+          </button>
+        </div>
       </div>
 
       {/* Search and Filters */}

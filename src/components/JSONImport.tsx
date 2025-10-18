@@ -43,7 +43,7 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
       }
 
       // Transform and validate each transaction
-      const importedTransactions = transactions.map((tx: any, index: number) => {
+      const importedTransactions = transactions.map((tx: Record<string, unknown>, index: number) => {
         // Validate required fields
         if (!tx.date) {
           throw new Error(`Transaction ${index + 1}: Missing required field 'date'`);
@@ -62,8 +62,10 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
           if (isNaN(date.getTime())) {
             throw new Error(`Transaction ${index + 1}: Invalid date format '${tx.date}'`);
           }
-        } else {
+        } else if (typeof tx.date === 'number') {
           date = new Date(tx.date);
+        } else {
+          throw new Error(`Transaction ${index + 1}: Invalid date type`);
         }
 
         // Parse amount - handle both number and string, support credit/debit indicators
@@ -76,12 +78,14 @@ export const JSONImport: React.FC<JSONImportProps> = ({ onImportComplete }) => {
           if (isNaN(amount)) {
             throw new Error(`Transaction ${index + 1}: Invalid amount '${rawAmount}'`);
           }
+        } else if (typeof rawAmount === 'number') {
+          amount = rawAmount;
         } else {
-          amount = parseFloat(rawAmount);
+          throw new Error(`Transaction ${index + 1}: Invalid amount type`);
         }
 
         // Check transaction type to determine if it should be negative or positive
-        const txType = (tx.type || '').toLowerCase();
+        const txType = typeof tx.type === 'string' ? tx.type.toLowerCase() : '';
 
         if (txType === 'payment' || txType === 'refund' || txType === 'credit') {
           // Payments and refunds should be positive (credits to the account)

@@ -5,10 +5,10 @@ export const isMobileDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
 
   // Check for mobile user agents
-  const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+  const userAgent = navigator.userAgent || navigator.vendor || (window as Window & { opera?: string }).opera || '';
 
   // Check for iOS
-  const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !(window as Window & { MSStream?: unknown }).MSStream;
 
   // Check for Android
   const isAndroid = /android/i.test(userAgent);
@@ -31,7 +31,7 @@ export const isMobileDevice = (): boolean => {
 export const isIOSDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
   const userAgent = navigator.userAgent;
-  return /iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream;
+  return /iPad|iPhone|iPod/.test(userAgent) && !(window as Window & { MSStream?: unknown }).MSStream;
 };
 
 /**

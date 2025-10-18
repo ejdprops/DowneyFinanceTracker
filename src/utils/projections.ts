@@ -24,6 +24,8 @@ export const generateProjections = (
       while (currentDate <= endDate) {
         projections.push({
           id: `proj-${bill.id}-${currentDate.getTime()}`,
+          accountId: bill.accountId,
+          recurringBillId: bill.id,
           date: new Date(currentDate),
           description: `${bill.description} (Projected)`,
           category: bill.category,
@@ -41,7 +43,7 @@ export const generateProjections = (
   return projections.sort((a, b) => a.date.getTime() - b.date.getTime());
 };
 
-const getNextOccurrence = (
+export const getNextOccurrence = (
   date: Date,
   frequency: RecurringBill['frequency'],
   dayOfMonth?: number,
@@ -58,7 +60,7 @@ const getNextOccurrence = (
       next.setDate(next.getDate() + 14);
       break;
     case 'monthly':
-    case 'quarterly':
+    case 'quarterly': {
       const monthsToAdd = frequency === 'monthly' ? 1 : 3;
       next.setMonth(next.getMonth() + monthsToAdd);
 
@@ -91,6 +93,7 @@ const getNextOccurrence = (
         next.setDate(dayOfMonth);
       }
       break;
+    }
     case 'yearly':
       next.setFullYear(next.getFullYear() + 1);
       break;

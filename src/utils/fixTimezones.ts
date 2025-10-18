@@ -4,7 +4,7 @@ import { loadRecurringBills, saveRecurringBills } from './storage';
  * Fix timezone issues in recurring bills by re-parsing dates
  * This function loads all recurring bills and ensures their dates are in local timezone
  */
-export const fixRecurringBillTimezones = (): { fixed: number; bills: any[] } => {
+export const fixRecurringBillTimezones = (): { fixed: number; bills: Array<{ description: string; oldDate: string; newDate?: string }> } => {
   const bills = loadRecurringBills();
 
   const fixedBills = bills.map(bill => {

@@ -149,6 +149,7 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
   const [merchantMappings, setMerchantMappings] = useState<MerchantMapping[]>([]);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([activeAccountId]);
   const [excludeTransfers, setExcludeTransfers] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   // Handle month selection - auto-populate from/to dates
   const handleMonthChange = (monthValue: string) => {
@@ -201,6 +202,19 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
   // Clear account selection
   const clearAccountSelection = () => {
     setSelectedAccountIds([]);
+  };
+
+  // Toggle category expansion
+  const toggleCategory = (categoryName: string) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryName)) {
+        newSet.delete(categoryName);
+      } else {
+        newSet.add(categoryName);
+      }
+      return newSet;
+    });
   };
 
   // Filter transactions by date range, accounts, and exclude projected
@@ -499,18 +513,37 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
               ];
               const color = colors[index % colors.length];
 
+              const isExpanded = expandedCategories.has(item.name);
+
               return (
                 <div key={item.name} className="space-y-1">
-                  <div className="flex justify-between items-baseline">
-                    <span className="text-sm font-medium text-white">{item.name}</span>
-                    <div className="flex items-baseline gap-3">
-                      <span className="text-xs text-gray-400">{item.count} transactions</span>
-                      <span className="text-sm font-semibold text-white">
-                        ${item.total.toFixed(2)} ({percentage.toFixed(1)}%)
-                      </span>
+                  <button
+                    onClick={() => toggleCategory(item.name)}
+                    className="w-full text-left group"
+                  >
+                    <div className="flex justify-between items-baseline">
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span className="text-sm font-medium text-white group-hover:text-blue-400 transition-colors">
+                          {item.name}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-3">
+                        <span className="text-xs text-gray-400">{item.count} transactions</span>
+                        <span className="text-sm font-semibold text-white">
+                          ${item.total.toFixed(2)} ({percentage.toFixed(1)}%)
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden">
+                  </button>
+                  <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden cursor-pointer" onClick={() => toggleCategory(item.name)}>
                     <div
                       className={`h-full bg-gradient-to-r ${color} transition-all duration-500 flex items-center justify-end px-2`}
                       style={{ width: `${percentage}%` }}
@@ -522,6 +555,29 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
                       )}
                     </div>
                   </div>
+
+                  {/* Expanded Transaction List */}
+                  {isExpanded && (
+                    <div className="mt-2 ml-6 space-y-1 bg-gray-700/30 rounded-lg p-3">
+                      {item.transactions
+                        .sort((a, b) => b.date.getTime() - a.date.getTime())
+                        .map((tx) => {
+                          const account = accounts.find(a => a.id === tx.accountId);
+                          return (
+                            <div key={tx.id} className="flex justify-between items-center text-xs py-1 border-b border-gray-700/50 last:border-0">
+                              <div className="flex-1">
+                                <span className="text-gray-300">{new Date(tx.date).toLocaleDateString()}</span>
+                                <span className="text-white ml-2">{tx.description}</span>
+                                {account && selectedAccountIds.length > 1 && (
+                                  <span className="text-gray-500 ml-2">({account.name})</span>
+                                )}
+                              </div>
+                              <span className="text-white font-medium ml-2">${Math.abs(tx.amount).toFixed(2)}</span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -557,21 +613,65 @@ export const SpendingCharts: React.FC<SpendingChartsProps> = ({ transactions, ac
               {groupedData.map((item) => {
                 const percentage = (item.total / totalAmount) * 100;
                 const average = item.total / item.count;
+                const isExpanded = expandedCategories.has(item.name);
 
                 return (
-                  <tr key={item.name} className="hover:bg-gray-700/30 transition-colors">
-                    <td className="px-4 py-3 text-sm text-white font-medium">{item.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-300 text-right">{item.count}</td>
-                    <td className="px-4 py-3 text-sm text-white font-semibold text-right">
-                      ${item.total.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-300 text-right">
-                      ${average.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-300 text-right">
-                      {percentage.toFixed(1)}%
-                    </td>
-                  </tr>
+                  <>
+                    <tr
+                      key={item.name}
+                      onClick={() => toggleCategory(item.name)}
+                      className="hover:bg-gray-700/30 transition-colors cursor-pointer"
+                    >
+                      <td className="px-4 py-3 text-sm text-white font-medium">
+                        <div className="flex items-center gap-2">
+                          <svg
+                            className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                          {item.name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-300 text-right">{item.count}</td>
+                      <td className="px-4 py-3 text-sm text-white font-semibold text-right">
+                        ${item.total.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                        ${average.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-300 text-right">
+                        {percentage.toFixed(1)}%
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${item.name}-expanded`}>
+                        <td colSpan={5} className="px-4 py-2 bg-gray-700/20">
+                          <div className="space-y-1">
+                            {item.transactions
+                              .sort((a, b) => b.date.getTime() - a.date.getTime())
+                              .map((tx) => {
+                                const account = accounts.find(a => a.id === tx.accountId);
+                                return (
+                                  <div key={tx.id} className="flex justify-between items-center text-xs py-1.5 px-2 hover:bg-gray-600/30 rounded">
+                                    <div className="flex-1">
+                                      <span className="text-gray-400">{new Date(tx.date).toLocaleDateString()}</span>
+                                      <span className="text-white ml-3">{tx.description}</span>
+                                      {account && selectedAccountIds.length > 1 && (
+                                        <span className="text-gray-500 ml-2">({account.name})</span>
+                                      )}
+                                    </div>
+                                    <span className="text-white font-medium ml-2">${Math.abs(tx.amount).toFixed(2)}</span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 );
               })}
             </tbody>

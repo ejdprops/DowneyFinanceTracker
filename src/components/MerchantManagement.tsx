@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Transaction, MerchantMapping } from '../types';
 import { saveMerchantMappings, loadMerchantMappings } from '../utils/storage';
 
@@ -52,10 +52,10 @@ export const MerchantManagement: React.FC<MerchantManagementProps> = ({ transact
   }, [transactions]);
 
   // Get the display name for a merchant (either from mapping or original)
-  const getMerchantDisplayName = (description: string): string => {
+  const getMerchantDisplayName = useCallback((description: string): string => {
     const mapping = merchantMappings.find(m => m.originalDescriptions.includes(description));
     return mapping?.displayName || description;
-  };
+  }, [merchantMappings]);
 
   // Get mapped merchant name if exists
   const getMerchantMapping = (description: string): MerchantMapping | undefined => {
@@ -70,7 +70,7 @@ export const MerchantManagement: React.FC<MerchantManagementProps> = ({ transact
       m.description.toLowerCase().includes(lower) ||
       getMerchantDisplayName(m.description).toLowerCase().includes(lower)
     );
-  }, [uniqueMerchants, searchTerm, merchantMappings]);
+  }, [uniqueMerchants, searchTerm, getMerchantDisplayName]);
 
   // Start editing a merchant mapping
   const startEdit = (description: string) => {

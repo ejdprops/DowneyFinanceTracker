@@ -96,18 +96,20 @@ The app automatically detects and parses multiple bank formats:
    - Single Amount column: positive = spent, negative = received
 
 2. **USAA Credit Card:**
-   - Same format as checking but with reversed signs
-   - Positive = payments received, negative = charges
-   - Auto-detected by presence of "Credit Card Payment" transactions
+   - Same format as checking but with reversed signs in the CSV file
+   - CSV file: Positive = payments received, negative = charges
+   - After parsing: Signs are inverted so positive = charges, negative = payments (consistent with other cards)
+   - Auto-detected by presence of "Credit Card Payment" transactions OR by account type
 
 3. **Capital One:**
    - Format: `Transaction Date, Posted Date, Card No., Description, Category, Debit, Credit`
    - Separate Debit/Credit columns
-   - Debits = expenses (negative), Credits = payments (positive)
+   - After parsing: Debits = charges (positive), Credits = payments (negative)
 
 4. **Apple Card:**
    - Format: `Transaction Date, Clearing Date, Description, Merchant, Category, Type, Amount (USD), Purchased By`
    - Type field indicates Purchase/Payment
+   - After parsing: Purchases = positive (debt), Payments = negative (credit)
    - Pending transactions have no Clearing Date
 
 5. **Chase:**
@@ -166,6 +168,9 @@ Uses browser File System Access API:
 - Buttons wrap to multiple lines when needed
 - "Manage" button next to account name for quick account settings access
 - iCloud sync button in header when connected
+- **Credit card balances** displayed in red as negative numbers to show debt owed
+  - Positive balance (you owe money) = displayed as negative in red (e.g., -$500.00)
+  - Negative balance (credit/overpayment) = displayed as positive in white (e.g., $50.00)
 - Credit card accounts show credit limit, available credit, APR, and due date
 
 ### Tabs
@@ -190,6 +195,9 @@ Uses browser File System Access API:
 - Order matters: more specific formats (Apple Card, Capital One) checked before generic formats
 - USAA credit cards auto-detected by scanning for "Credit Card Payment" transactions (>5% threshold)
 - Capital One must be detected before Chase (both have "Transaction Date" but Capital One has Debit/Credit columns)
+- **Transaction sign convention**: All transactions are stored with positive = spent/owe, negative = received/paid
+  - For credit cards: positive amounts increase debt, negative amounts decrease debt
+  - For checking/savings: positive amounts decrease balance, negative amounts increase balance
 
 ### PDF Parsing
 - Lazy-loaded to avoid loading 1MB+ PDF.js library until needed

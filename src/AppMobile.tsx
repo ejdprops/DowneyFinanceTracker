@@ -29,8 +29,9 @@ function AppMobile() {
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [showAccountManagement, setShowAccountManagement] = useState(false);
-  const [iCloudDirHandle, setICloudDirHandle] = useState<any | null>(null);
-  // @ts-ignore - iCloudFolderPath stored but not displayed on mobile
+  const [iCloudDirHandle, setICloudDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
+  // @ts-expect-error - iCloudFolderPath stored but not displayed on mobile
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null);
 
   // Load data on mount
@@ -215,7 +216,7 @@ function AppMobile() {
     setDebts(data.debts);
   };
 
-  const handleFolderSelected = (dirHandle: any, folderPath: string) => {
+  const handleFolderSelected = (dirHandle: FileSystemDirectoryHandle, folderPath: string) => {
     setICloudDirHandle(dirHandle);
     setICloudFolderPath(folderPath);
     saveICloudFolderPath(folderPath);

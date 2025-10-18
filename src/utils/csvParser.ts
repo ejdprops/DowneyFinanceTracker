@@ -2,16 +2,18 @@ import Papa from 'papaparse';
 import type { Transaction, ParsedCSVData } from '../types';
 import { parseDate } from './dateUtils';
 
+type CSVRow = Record<string, string>;
+
 interface BankCSVFormat {
   name: string;
-  detect: (headers: string[], firstRow: any) => boolean;
-  parse: (row: any, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>) => Transaction | null;
+  detect: (headers: string[], firstRow: CSVRow) => boolean;
+  parse: (row: CSVRow, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>) => Transaction | null;
 }
 
 /**
  * Parse CSV file with automatic bank format detection
  */
-export const parseCSV = (file: File): Promise<ParsedCSVData> => {
+export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'credit_card'): Promise<ParsedCSVData> => {
   return new Promise((resolve) => {
     const errors: string[] = [];
     const transactions: Transaction[] = [];
@@ -35,7 +37,7 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
 
         // Detect bank format from headers and first row
         const headers = results.meta.fields || [];
-        const firstRow = results.data[0];
+        const firstRow = results.data[0] as CSVRow;
 
         console.log('CSV Headers:', headers);
 
@@ -53,7 +55,7 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
         let usaaCreditCardPaymentCount = 0;
         let usaaTotalRows = 0;
 
-        results.data.forEach((row: any) => {
+        (results.data as CSVRow[]).forEach((row) => {
           try {
             const dateStr = row['Date'] || row['date'] || row['Transaction Date'] || row['Post Date'] || row['Posted Date'] || row['Posting Date'];
             if (dateStr) {
@@ -64,14 +66,20 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
               }
             }
 
-            // For USAA format, detect if this is a credit card by checking for "Credit Card Payment" category
+            // For USAA format, detect if this is a credit card by checking for "Credit Card Payment" as INCOME
+            // Credit card accounts receive payments (positive), checking accounts make payments (negative)
             if (detectedFormat!.name === 'USAA') {
               usaaTotalRows++;
               const category = row['Category'] || row['category'] || '';
               const description = row['Description'] || row['description'] || '';
-              if (category.toLowerCase().includes('credit card payment') ||
-                  description.toLowerCase().includes('credit card payment') ||
-                  description.toLowerCase().includes('automatic payment')) {
+              const amount = parseFloat(row['Amount'] || '0');
+
+              // Credit card CSV: "Credit Card Payment" appears as POSITIVE (money received)
+              // Checking CSV: "Credit Card Payment" appears as NEGATIVE (money sent out)
+              if ((category.toLowerCase().includes('credit card payment') ||
+                   description.toLowerCase().includes('credit card payment') ||
+                   description.toLowerCase().includes('automatic payment')) &&
+                  amount > 0) {
                 usaaCreditCardPaymentCount++;
               }
             }
@@ -84,18 +92,26 @@ export const parseCSV = (file: File): Promise<ParsedCSVData> => {
         // Map of date string -> current count (how many we've processed)
         const dateCounts = new Map<string, number>();
 
-        // If this is USAA and we found credit card payments, mark it as a credit card CSV
-        // Use a special key in dateCounts map to pass this info to the parser
-        if (detectedFormat!.name === 'USAA' && usaaCreditCardPaymentCount > 0 && usaaTotalRows > 0) {
+        // Determine if this is a credit card CSV
+        // Priority 1: Use accountType parameter if provided
+        // Priority 2: Auto-detect for USAA by checking for credit card payment transactions
+        let isCreditCardCSV = accountType === 'credit_card';
+
+        if (!isCreditCardCSV && detectedFormat!.name === 'USAA' && usaaCreditCardPaymentCount > 0 && usaaTotalRows > 0) {
           const creditCardRatio = usaaCreditCardPaymentCount / usaaTotalRows;
           // If more than 5% of transactions are credit card payments, it's probably a credit card account
           if (creditCardRatio > 0.05) {
-            dateCounts.set('__USAA_IS_CREDIT_CARD__', 1);
-            console.log('Detected USAA Credit Card CSV (will invert amounts)');
+            isCreditCardCSV = true;
+            console.log('Auto-detected USAA Credit Card CSV (will invert amounts)');
           }
         }
 
-        results.data.forEach((row: any, index: number) => {
+        if (isCreditCardCSV) {
+          dateCounts.set('__USAA_IS_CREDIT_CARD__', 1);
+          console.log('Processing as Credit Card CSV (will invert amounts)');
+        }
+
+        (results.data as CSVRow[]).forEach((row, index: number) => {
           try {
             const transaction = detectedFormat!.parse(row, index, dateCounts, dateTotals);
             if (transaction) {
@@ -130,7 +146,7 @@ export const parseUSAACSV = parseCSV;
 /**
  * USAA Format Parser
  */
-const parseUSAARow = (row: any, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>): Transaction | null => {
+const parseUSAARow = (row: CSVRow, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>): Transaction | null => {
   const dateStr = row['Date'] || row['date'];
   const description = row['Description'] || row['description'];
   const originalDescription = row['Original Description'] || row['original description'] || '';
@@ -215,7 +231,7 @@ const parseUSAARow = (row: any, index: number, dateCounts?: Map<string, number>,
 /**
  * Chase Bank Format Parser
  */
-const parseChaseRow = (row: any, index: number): Transaction | null => {
+const parseChaseRow = (row: CSVRow, index: number): Transaction | null => {
   // Chase format: Transaction Date, Post Date, Description, Category, Type, Amount, Memo
   const dateStr = row['Transaction Date'] || row['Post Date'] || row['Posting Date'];
   const description = row['Description'] || row['Memo'];
@@ -253,7 +269,7 @@ const parseChaseRow = (row: any, index: number): Transaction | null => {
 /**
  * Bank of America Format Parser
  */
-const parseBofARow = (row: any, index: number): Transaction | null => {
+const parseBofARow = (row: CSVRow, index: number): Transaction | null => {
   // BofA format: Date, Description, Amount, Running Bal.
   const dateStr = row['Date'] || row['Posted Date'];
   const description = row['Description'] || row['Payee'];
@@ -290,7 +306,7 @@ const parseBofARow = (row: any, index: number): Transaction | null => {
 /**
  * Wells Fargo Format Parser
  */
-const parseWellsFargoRow = (row: any, index: number): Transaction | null => {
+const parseWellsFargoRow = (row: CSVRow, index: number): Transaction | null => {
   // Wells Fargo: Date, Amount, *, Check Number, Description
   const dateStr = row['Date'];
   const description = row['Description'];
@@ -327,7 +343,7 @@ const parseWellsFargoRow = (row: any, index: number): Transaction | null => {
 /**
  * Capital One Format Parser
  */
-const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
+const parseCapitalOneRow = (row: CSVRow, index: number): Transaction | null => {
   // Capital One: Transaction Date, Posted Date, Card No., Description, Category, Debit, Credit
   const dateStr = row['Transaction Date'] || row['Posted Date'];
   const description = row['Description'];
@@ -377,8 +393,8 @@ const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
   console.log(`Capital One row ${index + 1} parsed:`, { debit, credit });
 
   // Capital One shows debits and credits in separate columns
-  // Debits are expenses (negative), Credits are payments/refunds (positive)
-  const amount = credit > 0 ? credit : -debit;
+  // For credit cards: Debits are charges (positive = owe more), Credits are payments (negative = owe less)
+  const amount = debit > 0 ? debit : -credit;
 
   console.log(`Capital One row ${index + 1} final amount:`, amount);
 
@@ -403,7 +419,7 @@ const parseCapitalOneRow = (row: any, index: number): Transaction | null => {
 /**
  * Apple Card Format Parser
  */
-const parseAppleCardRow = (row: any, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>): Transaction | null => {
+const parseAppleCardRow = (row: CSVRow, index: number, dateCounts?: Map<string, number>, dateTotals?: Map<string, number>): Transaction | null => {
   // Apple Card format: Transaction Date, Clearing Date, Description, Merchant, Category, Type (Purchase/Payment), Amount (USD), Purchased By
   const transactionDateStr = row['Transaction Date'];
   const clearingDateStr = row['Clearing Date'];
@@ -430,15 +446,18 @@ const parseAppleCardRow = (row: any, index: number, dateCounts?: Map<string, num
     throw new Error('Invalid amount format');
   }
 
-  // Normalize amount: Purchases/Installments/Interest/Other should be negative (money spent/owed), Payments should be positive (money added)
-  // Apple Card CSV shows purchases as positive, so we need to invert them
+  // Normalize amount for credit cards:
+  // - Purchases/Charges = positive (increases debt owed)
+  // - Payments/Refunds = negative (decreases debt owed)
+  // Apple Card CSV shows purchases as positive and payments as negative (which is correct!)
+  // We just need to ensure the sign is correct for all types
   if (type && (type.toLowerCase().includes('purchase') ||
                type.toLowerCase().includes('installment') ||
                type.toLowerCase().includes('interest') ||
                type.toLowerCase().includes('other'))) {
-    amount = -Math.abs(amount); // Make purchases, installments, interest, and other charges negative
+    amount = Math.abs(amount); // Make purchases, installments, interest, and other charges positive
   } else if (type && (type.toLowerCase().includes('payment') || type.toLowerCase().includes('refund'))) {
-    amount = Math.abs(amount); // Make payments/refunds positive
+    amount = -Math.abs(amount); // Make payments/refunds negative
   }
 
   // Check if transaction is pending (has Transaction Date but no Clearing Date)
@@ -477,7 +496,7 @@ const parseAppleCardRow = (row: any, index: number, dateCounts?: Map<string, num
 /**
  * Generic Format Parser (fallback)
  */
-const parseGenericRow = (row: any, index: number): Transaction | null => {
+const parseGenericRow = (row: CSVRow, index: number): Transaction | null => {
   // Try to find date, description, and amount fields with common variations
   const possibleDateFields = ['Date', 'date', 'Transaction Date', 'Post Date', 'Posted Date', 'Posting Date'];
   const possibleDescFields = ['Description', 'description', 'Memo', 'memo', 'Payee', 'payee', 'Details'];
