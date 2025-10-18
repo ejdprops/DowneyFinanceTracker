@@ -31,14 +31,14 @@ import {
 import { saveToICloud } from './utils/icloudStorage';
 import { generateProjections, calculateBalances, getNextOccurrence } from './utils/projections';
 import { parseCSV } from './utils/csvParser';
-import logo from './assets/downey-text-logo.png';
+import logo from './assets/downey-app-logo-header.png';
 
 // Declare global build timestamp injected by Vite
 declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.6.3'; // 3-column grid header with downey-text-logo
+const VERSION = '1.6.4'; // Updated to downey-app-logo-header
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
