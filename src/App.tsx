@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.6.4'; // Updated to downey-app-logo-header
+const VERSION = '1.6.8'; // Fixed header wrapping with flex-nowrap and compact tiles
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -860,9 +860,9 @@ function App() {
       <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
         <div className="max-w-7xl mx-auto px-3">
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
-            {/* 3-Column Grid Header Layout */}
-            <div className="mb-3 grid grid-cols-[auto_1fr_auto] items-center gap-4">
-              {/* Left Column: Logo (fixed width) */}
+            {/* 3-Column Flex Header Layout */}
+            <div className="mb-3 flex flex-nowrap items-start gap-2">
+              {/* Left Column: Logo (absolute left, top aligned) */}
               <div className="flex-shrink-0">
                 <img
                   src={logo}
@@ -872,10 +872,10 @@ function App() {
                 />
               </div>
 
-              {/* Center Column: Account tiles (flexible, centered) */}
-              <div className="flex flex-col items-center justify-center">
+              {/* Center Column: Account tiles (2 rows, centered, flexible) */}
+              <div className="flex-1 flex flex-col items-center justify-start min-w-0 overflow-hidden">
                 {/* Checking/Savings Accounts Row */}
-                <div className="flex items-center justify-center gap-2 mb-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 mb-2">
                 {accounts
                   .filter(acc => acc.accountType !== 'credit_card')
                   .map(acc => {
@@ -892,7 +892,7 @@ function App() {
                     <button
                       key={acc.id}
                       onClick={() => handleSelectAccount(acc.id)}
-                      className={`px-3 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[120px] ${
+                      className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[100px] ${
                         acc.id === activeAccountId
                           ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
                           : 'bg-gray-700/50 hover:bg-gray-700'
@@ -914,7 +914,7 @@ function App() {
               </div>
 
               {/* Credit Cards Row */}
-              <div className="flex items-center justify-center gap-2 mb-2">
+              <div className="flex flex-wrap items-center justify-center gap-2 mb-2">
                 {accounts
                   .filter(acc => acc.accountType === 'credit_card')
                   .map(acc => {
@@ -933,7 +933,7 @@ function App() {
                     <button
                       key={acc.id}
                       onClick={() => handleSelectAccount(acc.id)}
-                      className={`px-3 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[120px] ${
+                      className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[100px] ${
                         acc.id === activeAccountId
                           ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
                           : 'bg-gray-700/50 hover:bg-gray-700'
@@ -1033,8 +1033,8 @@ function App() {
                 </div>
               </div>
 
-              {/* Right Column: Summary Tile (fixed width) */}
-              <div className="flex-shrink-0">
+              {/* Right Column: Summary Tile (absolute right, top aligned) */}
+              <div className="flex-shrink-0 self-start">
                 <div className="bg-gray-700/50 rounded-lg px-4 py-2 border border-gray-600">
                   <div className="space-y-2">
                     <div className="text-center">
