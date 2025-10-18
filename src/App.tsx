@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.6.9'; // Fixed header with 145x145 containers for logo and summary
+const VERSION = '1.7.0'; // Fixed summary tile wrapping by correcting div structure
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -953,124 +953,45 @@ function App() {
                   );
                 })}
               </div>
+            </div>
 
-              {/* Snapshot Layout - Hidden by default, shown for screenshot */}
-              <div id="account-balances-snapshot" className="hidden" style={{ width: '280px', overflow: 'hidden' }}>
-                <div className="bg-gradient-to-br from-gray-800 to-gray-900" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
-                  <h2 className="text-base font-bold text-white mb-2 text-center pt-3">Account Balances</h2>
-
-                  {/* 2-Column Grid for All Accounts */}
-                  <div className="grid grid-cols-2 gap-1 mb-2">
-                    {accounts.map(acc => {
-                      const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                      const accBalance = accTransactions.length > 0
-                        ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                        : acc.availableBalance || 0;
-
-                      const displayBalance = accBalance;
-                      const balanceColorStyle = acc.accountType === 'credit_card'
-                        ? (accBalance < 0 ? '#f87171' : '#4ade80')
-                        : (accBalance >= 0 ? '#4ade80' : '#f87171');
-
-                      return (
-                        <div
-                          key={acc.id}
-                          className="bg-gray-700/50 p-2 flex flex-col items-center"
-                        >
-                          <span className="text-[10px] font-semibold text-gray-200 text-center leading-tight">
-                            {acc.name}
-                          </span>
-                          <span className="text-[8px] opacity-70 text-gray-400 text-center">
-                            {acc.institution}
-                          </span>
-                          <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
-                            ${Math.abs(displayBalance).toFixed(2)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Summary at Bottom */}
-                  <div className="bg-gray-700/50 px-3 py-2 border-t border-gray-600">
-                    <div className="space-y-2">
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 mb-1">Checking/Savings</div>
-                        <div className="text-lg font-bold text-green-400">
-                          ${(() => {
-                            const checkingSavingsTotal = accounts
-                              .filter(acc => acc.accountType !== 'credit_card')
-                              .reduce((sum, acc) => {
-                                const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                                const accBalance = accTransactions.length > 0
-                                  ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                                  : acc.availableBalance || 0;
-                                return sum + accBalance;
-                              }, 0);
-                            return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                          })()}
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-gray-400 mb-1">Credit Cards Owed</div>
-                        <div className="text-lg font-bold text-red-400">
-                          ${(() => {
-                            const creditCardTotal = accounts
-                              .filter(acc => acc.accountType === 'credit_card')
-                              .reduce((sum, acc) => {
-                                const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                                const accBalance = accTransactions.length > 0
-                                  ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                                  : acc.availableBalance || 0;
-                                return sum + Math.abs(Math.min(0, accBalance));
-                              }, 0);
-                            return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                          })()}
-                        </div>
-                      </div>
+            {/* Right Column: Summary Tile (fixed size, top-right aligned) */}
+            <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-end">
+              <div className="bg-gray-700/50 rounded-lg px-3 py-3 border border-gray-600 w-full h-full flex flex-col justify-center">
+                <div className="space-y-3">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">Checking/Savings</div>
+                    <div className="text-lg font-bold text-green-400">
+                      ${(() => {
+                        const checkingSavingsTotal = accounts
+                          .filter(acc => acc.accountType !== 'credit_card')
+                          .reduce((sum, acc) => {
+                            const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                            const accBalance = accTransactions.length > 0
+                              ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                              : acc.availableBalance || 0;
+                            return sum + accBalance;
+                          }, 0);
+                        return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      })()}
                     </div>
                   </div>
-                </div>
-              </div>
-
-              {/* Right Column: Summary Tile (fixed size, top-right aligned) */}
-              <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-end">
-                <div className="bg-gray-700/50 rounded-lg px-3 py-3 border border-gray-600 w-full h-full flex flex-col justify-center">
-                  <div className="space-y-3">
-                    <div className="text-center">
-                      <div className="text-xs text-gray-400 mb-1">Checking/Savings</div>
-                      <div className="text-lg font-bold text-green-400">
-                        ${(() => {
-                          const checkingSavingsTotal = accounts
-                            .filter(acc => acc.accountType !== 'credit_card')
-                            .reduce((sum, acc) => {
-                              const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                              const accBalance = accTransactions.length > 0
-                                ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                                : acc.availableBalance || 0;
-                              return sum + accBalance;
-                            }, 0);
-                          return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        })()}
-                      </div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-xs text-gray-400 mb-1">Credit Cards Owed</div>
-                      <div className="text-lg font-bold text-red-400">
-                        ${(() => {
-                          const creditCardTotal = accounts
-                            .filter(acc => acc.accountType === 'credit_card')
-                            .reduce((sum, acc) => {
-                              const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                              const accBalance = accTransactions.length > 0
-                                ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                                : acc.availableBalance || 0;
-                              // For credit cards, negative balance = debt owed (show as positive number)
-                              return sum + Math.abs(Math.min(0, accBalance));
-                            }, 0);
-                          return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        })()}
-                      </div>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">Credit Cards Owed</div>
+                    <div className="text-lg font-bold text-red-400">
+                      ${(() => {
+                        const creditCardTotal = accounts
+                          .filter(acc => acc.accountType === 'credit_card')
+                          .reduce((sum, acc) => {
+                            const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                            const accBalance = accTransactions.length > 0
+                              ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                              : acc.availableBalance || 0;
+                            // For credit cards, negative balance = debt owed (show as positive number)
+                            return sum + Math.abs(Math.min(0, accBalance));
+                          }, 0);
+                        return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1078,27 +999,106 @@ function App() {
             </div>
           </div>
 
-            {/* Account Info Row */}
-            <div className="mb-3 pb-3 border-b border-gray-700">
-              {/* Top Row: Card Icon, Account Name, Balance Info */}
-              <div className="flex items-center justify-between gap-4 mb-2">
-                <div className="flex items-center gap-3">
-                  {/* Card Icon Placeholder */}
-                  <div className="h-[60px] w-[95px] bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg border border-gray-600 flex items-center justify-center shadow-lg">
-                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                    </svg>
+          {/* Snapshot Layout - Hidden by default, shown for screenshot */}
+          <div id="account-balances-snapshot" className="hidden" style={{ width: '280px', overflow: 'hidden' }}>
+            <div className="bg-gradient-to-br from-gray-800 to-gray-900" style={{ width: '280px', minWidth: '280px', maxWidth: '280px' }}>
+              <h2 className="text-base font-bold text-white mb-2 text-center pt-3">Account Balances</h2>
+
+              {/* 2-Column Grid for All Accounts */}
+              <div className="grid grid-cols-2 gap-1 mb-2">
+                {accounts.map(acc => {
+                  const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                  const accBalance = accTransactions.length > 0
+                    ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                    : acc.availableBalance || 0;
+
+                  const displayBalance = accBalance;
+                  const balanceColorStyle = acc.accountType === 'credit_card'
+                    ? (accBalance < 0 ? '#f87171' : '#4ade80')
+                    : (accBalance >= 0 ? '#4ade80' : '#f87171');
+
+                  return (
+                    <div
+                      key={acc.id}
+                      className="bg-gray-700/50 p-2 flex flex-col items-center"
+                    >
+                      <span className="text-[10px] font-semibold text-gray-200 text-center leading-tight">
+                        {acc.name}
+                      </span>
+                      <span className="text-[8px] opacity-70 text-gray-400 text-center">
+                        {acc.institution}
+                      </span>
+                      <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
+                        ${Math.abs(displayBalance).toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Summary at Bottom */}
+              <div className="bg-gray-700/50 px-3 py-2 border-t border-gray-600">
+                <div className="space-y-2">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">Checking/Savings</div>
+                    <div className="text-lg font-bold text-green-400">
+                      ${(() => {
+                        const checkingSavingsTotal = accounts
+                          .filter(acc => acc.accountType !== 'credit_card')
+                          .reduce((sum, acc) => {
+                            const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                            const accBalance = accTransactions.length > 0
+                              ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                              : acc.availableBalance || 0;
+                            return sum + accBalance;
+                          }, 0);
+                        return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      })()}
+                    </div>
                   </div>
-                  <div>
-                    <h1 className="text-lg font-bold text-white">{account?.name || 'No Account'}</h1>
-                    <p className="text-gray-400 text-xs flex items-center gap-1">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
-                      {account?.institution} •••• {account?.accountNumber.slice(-4)}
-                    </p>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-400 mb-1">Credit Cards Owed</div>
+                    <div className="text-lg font-bold text-red-400">
+                      ${(() => {
+                        const creditCardTotal = accounts
+                          .filter(acc => acc.accountType === 'credit_card')
+                          .reduce((sum, acc) => {
+                            const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                            const accBalance = accTransactions.length > 0
+                              ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                              : acc.availableBalance || 0;
+                            return sum + Math.abs(Math.min(0, accBalance));
+                          }, 0);
+                        return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      })()}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  {account?.accountType === 'credit_card' && account.creditLimit && (
+              </div>
+            </div>
+          </div>
+
+          {/* Account Info Row */}
+          <div className="mb-3 pb-3 border-b border-gray-700">
+            {/* Top Row: Card Icon, Account Name, Balance Info */}
+            <div className="flex items-center justify-between gap-4 mb-2">
+              <div className="flex items-center gap-3">
+                {/* Card Icon Placeholder */}
+                <div className="h-[60px] w-[95px] bg-gradient-to-br from-gray-700 to-gray-800 rounded-lg border border-gray-600 flex items-center justify-center shadow-lg">
+                  <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white">{account?.name || 'No Account'}</h1>
+                  <p className="text-gray-400 text-xs flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                    {account?.institution} •••• {account?.accountNumber.slice(-4)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {account?.accountType === 'credit_card' && account.creditLimit && (
                     <div className="flex gap-2 text-xs">
                       <div className="bg-gray-700/50 px-2.5 py-1.25 rounded-lg">
                         <p className="text-gray-400 text-[10px]">Balance Owed</p>
