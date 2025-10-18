@@ -38,7 +38,7 @@ declare const __BUILD_DATE__: string;
 
 // Build timestamp - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
-const VERSION = '1.7.1'; // Fixed projections tab to always show projections regardless of checkbox
+const VERSION = '1.7.2'; // Updated projections tab to show summary in each month section
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');

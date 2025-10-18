@@ -44,20 +44,8 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
 
   const months = Object.keys(groupedByMonth).sort();
 
-  // Calculate summary stats
-  const totalIncome = futureTransactions
-    .filter(t => t.amount > 0)
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpenses = futureTransactions
-    .filter(t => t.amount < 0)
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const projectedEndBalance = futureTransactions.length > 0
-    ? futureTransactions[futureTransactions.length - 1].balance
-    : currentBalance;
-
-  const netChange = projectedEndBalance - currentBalance;
+  // Determine current month key for comparison
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
   return (
     <div className="space-y-6">
@@ -84,44 +72,6 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
               }`}
             />
           </button>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="flex justify-center gap-2">
-        <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-3xl p-2 border border-blue-500/30 inline-flex flex-col items-center">
-          <h3 className="text-xs font-medium text-blue-300 mb-1">Current Balance</h3>
-          <p className={`text-2xl font-bold whitespace-nowrap ${currentBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
-            ${currentBalance.toFixed(2)}
-          </p>
-        </div>
-
-        <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-3xl p-2 border border-green-500/30 inline-flex flex-col items-center">
-          <h3 className="text-xs font-medium text-green-300 mb-1">Expected Income</h3>
-          <p className="text-2xl font-bold text-white whitespace-nowrap">+${totalIncome.toFixed(2)}</p>
-        </div>
-
-        <div className="bg-gradient-to-br from-red-500/20 to-red-600/20 rounded-3xl p-2 border border-red-500/30 inline-flex flex-col items-center">
-          <h3 className="text-xs font-medium text-red-300 mb-1">Expected Expenses</h3>
-          <p className="text-2xl font-bold text-white whitespace-nowrap">-${totalExpenses.toFixed(2)}</p>
-        </div>
-
-        <div className={`bg-gradient-to-br rounded-3xl p-2 border inline-flex flex-col items-center ${
-          netChange >= 0
-            ? 'from-purple-500/20 to-purple-600/20 border-purple-500/30'
-            : 'from-orange-500/20 to-orange-600/20 border-orange-500/30'
-        }`}>
-          <h3 className={`text-xs font-medium mb-1 ${
-            netChange >= 0 ? 'text-purple-300' : 'text-orange-300'
-          }`}>
-            Projected End Balance
-          </h3>
-          <p className={`text-2xl font-bold whitespace-nowrap ${projectedEndBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
-            ${projectedEndBalance.toFixed(2)}
-          </p>
-          <p className={`text-sm mt-1 ${netChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-            {netChange >= 0 ? '+' : ''}{netChange.toFixed(2)} net change
-          </p>
         </div>
       </div>
 
@@ -154,32 +104,43 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
             const startBalance = monthTransactions[0].balance - monthTransactions[0].amount;
             const endBalance = monthTransactions[monthTransactions.length - 1].balance;
 
+            // Check if this is the current month
+            const isCurrentMonth = monthKey === currentMonthKey;
+
             return (
               <div key={monthKey} className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
-                <div className="flex justify-between items-center mb-4">
+                <div className="mb-4">
                   <h4 className="text-lg font-semibold text-white">{monthName}</h4>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-400">End Balance</p>
-                    <p className={`text-2xl font-bold ${endBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      ${endBalance.toFixed(2)}
-                    </p>
-                  </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="grid grid-cols-4 gap-4 mb-4">
                   <div className="bg-gray-700/50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400">Start</p>
-                    <p className={`text-lg font-semibold ${startBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      ${startBalance.toFixed(2)}
+                    <p className="text-xs text-gray-400">
+                      {isCurrentMonth ? 'Current Balance' : 'Projected Start'}
+                    </p>
+                    <p className={`text-lg font-semibold ${(isCurrentMonth ? currentBalance : startBalance) < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      ${(isCurrentMonth ? currentBalance : startBalance).toFixed(2)}
                     </p>
                   </div>
                   <div className="bg-green-500/20 rounded-xl p-3">
-                    <p className="text-xs text-green-300">Income</p>
+                    <p className="text-xs text-green-300">
+                      {isCurrentMonth ? 'Projected Income' : 'Projected Income'}
+                    </p>
                     <p className="text-lg font-semibold text-white">+${monthIncome.toFixed(2)}</p>
                   </div>
                   <div className="bg-red-500/20 rounded-xl p-3">
-                    <p className="text-xs text-red-300">Expenses</p>
+                    <p className="text-xs text-red-300">
+                      {isCurrentMonth ? 'Projected Expenses' : 'Projected Expenses'}
+                    </p>
                     <p className="text-lg font-semibold text-white">-${monthExpenses.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-blue-500/20 rounded-xl p-3">
+                    <p className="text-xs text-blue-300">
+                      {isCurrentMonth ? 'Projected End' : 'Projected End'}
+                    </p>
+                    <p className={`text-lg font-semibold ${endBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                      ${endBalance.toFixed(2)}
+                    </p>
                   </div>
                 </div>
 
