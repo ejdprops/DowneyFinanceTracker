@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { CSVImport } from './components/CSVImport';
 import { JSONImport } from './components/JSONImport';
 import { ICloudSync } from './components/ICloudSync';
-import { AccountSelector } from './components/AccountSelector';
 import { AccountManagement } from './components/AccountManagement';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
@@ -20,6 +19,12 @@ import {
   loadICloudFolderPath,
 } from './utils/storage';
 import { generateProjections, calculateBalances } from './utils/projections';
+import logo from './assets/downey-app-logo-header.png';
+
+// Declare global constants
+declare const __APP_OWNER__: string;
+
+const APP_OWNER = typeof __APP_OWNER__ !== 'undefined' ? __APP_OWNER__ : 'Family';
 
 function AppMobile() {
   const [currentTab, setCurrentTab] = useState<'balance' | 'transactions' | 'sync'>('balance');
@@ -225,63 +230,180 @@ function AppMobile() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Mobile Header */}
-      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-b border-gray-700">
-        <div className="px-4 py-3">
-          <div className="mb-3">
-            <AccountSelector
-              accounts={accounts}
-              activeAccountId={activeAccountId}
-              onSelectAccount={handleSelectAccount}
-              onManageAccounts={() => setShowAccountManagement(true)}
-            />
-          </div>
-
-          {/* Balance Display */}
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-xl p-4 border border-gray-700">
-            <div className="text-center">
-              <p className="text-xs text-gray-400 mb-1">Current Balance</p>
-              <p className="text-3xl font-bold text-white mb-1">
-                ${currentBalance.toFixed(2)}
-              </p>
-              <p className="text-xs text-gray-400">
-                {account?.institution} •••• {account?.accountNumber.slice(-4)}
-              </p>
+      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
+        <div className="px-3">
+          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-3 border border-gray-700">
+            {/* Logo */}
+            <div className="flex justify-center mb-3">
+              <img
+                src={logo}
+                alt={`${APP_OWNER}'s Finance Tracker`}
+                className="h-20 w-auto object-contain"
+                title={`${APP_OWNER}'s Finance Tracker`}
+              />
             </div>
-          </div>
 
-          {/* Tab Navigation */}
-          <nav className="flex gap-2 mt-3">
+            {/* Account Tiles */}
+            <div className="mb-3">
+              {/* Checking/Savings Accounts */}
+              <div className="flex flex-wrap justify-center gap-2 mb-2">
+                {accounts
+                  .filter(acc => acc.accountType !== 'credit_card')
+                  .map(acc => {
+                    const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                    const accBalance = accTransactions.length > 0
+                      ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                      : acc.availableBalance || 0;
+
+                    const displayBalance = accBalance;
+                    const balanceColorStyle = accBalance >= 0 ? '#4ade80' : '#f87171';
+
+                    return (
+                      <button
+                        key={acc.id}
+                        onClick={() => handleSelectAccount(acc.id)}
+                        className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[90px] ${
+                          acc.id === activeAccountId
+                            ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
+                            : 'bg-gray-700/50 hover:bg-gray-700'
+                        }`}
+                        title={`${acc.name} - ${acc.institution}`}
+                      >
+                        <span className={`text-[10px] font-semibold ${acc.id === activeAccountId ? 'text-white' : 'text-gray-200'}`}>
+                          {acc.name}
+                        </span>
+                        <span className={`text-[9px] opacity-70 ${acc.id === activeAccountId ? 'text-white' : 'text-gray-400'}`}>
+                          {acc.institution}
+                        </span>
+                        <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
+                          ${displayBalance.toFixed(2)}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+
+              {/* Credit Cards */}
+              <div className="flex flex-wrap justify-center gap-2">
+                {accounts
+                  .filter(acc => acc.accountType === 'credit_card')
+                  .map(acc => {
+                    const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                    const accBalance = accTransactions.length > 0
+                      ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                      : acc.availableBalance || 0;
+
+                    const displayBalance = accBalance;
+                    const balanceColorStyle = accBalance < 0 ? '#f87171' : '#4ade80';
+
+                    return (
+                      <button
+                        key={acc.id}
+                        onClick={() => handleSelectAccount(acc.id)}
+                        className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[90px] ${
+                          acc.id === activeAccountId
+                            ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
+                            : 'bg-gray-700/50 hover:bg-gray-700'
+                        }`}
+                        title={`${acc.name} - ${acc.institution}`}
+                      >
+                        <span className={`text-[10px] font-semibold ${acc.id === activeAccountId ? 'text-white' : 'text-gray-200'}`}>
+                          {acc.name}
+                        </span>
+                        <span className={`text-[9px] opacity-70 ${acc.id === activeAccountId ? 'text-white' : 'text-gray-400'}`}>
+                          {acc.institution}
+                        </span>
+                        <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
+                          ${displayBalance.toFixed(2)}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Summary Section */}
+            <div className="bg-gray-700/50 rounded-lg px-3 py-2 border border-gray-600 mb-3">
+              <div className="flex justify-around text-center">
+                <div>
+                  <div className="text-[10px] text-gray-400">Checking/Savings</div>
+                  <div className="text-base font-bold text-green-400">
+                    ${(() => {
+                      const checkingSavingsTotal = accounts
+                        .filter(acc => acc.accountType !== 'credit_card')
+                        .reduce((sum, acc) => {
+                          const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                          const accBalance = accTransactions.length > 0
+                            ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                            : acc.availableBalance || 0;
+                          return sum + accBalance;
+                        }, 0);
+                      return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    })()}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400">Credit Cards Owed</div>
+                  <div className="text-base font-bold text-red-400">
+                    ${(() => {
+                      const creditCardTotal = accounts
+                        .filter(acc => acc.accountType === 'credit_card')
+                        .reduce((sum, acc) => {
+                          const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                          const accBalance = accTransactions.length > 0
+                            ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                            : acc.availableBalance || 0;
+                          return sum + Math.abs(Math.min(0, accBalance));
+                        }, 0);
+                      return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Manage Accounts Button */}
             <button
-              onClick={() => setCurrentTab('balance')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                currentTab === 'balance'
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                  : 'bg-gray-800 text-gray-400'
-              }`}
+              onClick={() => setShowAccountManagement(true)}
+              className="w-full px-3 py-2 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-all text-xs mb-3"
             >
-              Balance
+              Manage Accounts
             </button>
-            <button
-              onClick={() => setCurrentTab('transactions')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                currentTab === 'transactions'
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                  : 'bg-gray-800 text-gray-400'
-              }`}
-            >
-              Transactions
-            </button>
-            <button
-              onClick={() => setCurrentTab('sync')}
-              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                currentTab === 'sync'
-                  ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                  : 'bg-gray-800 text-gray-400'
-              }`}
-            >
-              Sync
-            </button>
-          </nav>
+
+            {/* Tab Navigation */}
+            <nav className="flex gap-2">
+              <button
+                onClick={() => setCurrentTab('balance')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
+                  currentTab === 'balance'
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                    : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                Balance
+              </button>
+              <button
+                onClick={() => setCurrentTab('transactions')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
+                  currentTab === 'transactions'
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                    : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                Transactions
+              </button>
+              <button
+                onClick={() => setCurrentTab('sync')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
+                  currentTab === 'sync'
+                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                    : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                Sync
+              </button>
+            </nav>
+          </div>
         </div>
       </div>
 

@@ -40,7 +40,7 @@ declare const __APP_OWNER__: string;
 // Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
 const APP_OWNER = __APP_OWNER__;
-const VERSION = '1.8.0'; // Multi-build support for child instances (Ethan, Ac, Kendra)
+const VERSION = '1.8.1'; // Redesigned mobile header to match desktop design
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
