@@ -19,7 +19,7 @@ export const DebtsTracker: React.FC<DebtsTrackerProps> = ({
 
   const totalDebt = debts.reduce((sum, debt) => sum + debt.currentBalance, 0);
   const totalMinimumPayment = debts.reduce((sum, debt) => sum + debt.minimumPayment, 0);
-  const weightedInterestRate = debts.length > 0
+  const weightedInterestRate = debts.length > 0 && totalDebt > 0
     ? debts.reduce((sum, debt) => sum + (debt.interestRate * debt.currentBalance), 0) / totalDebt
     : 0;
 
@@ -48,7 +48,7 @@ export const DebtsTracker: React.FC<DebtsTrackerProps> = ({
         <div className="bg-purple-50 rounded-3xl p-2 border border-purple-200 inline-flex flex-col items-center">
           <h3 className="text-xs font-medium text-purple-900 mb-1">Avg. Interest Rate</h3>
           <p className="text-2xl font-bold text-purple-600 whitespace-nowrap">
-            {isNaN(weightedInterestRate) ? '0.00' : weightedInterestRate.toFixed(2)}%
+            {weightedInterestRate.toFixed(2)}%
           </p>
         </div>
       </div>
@@ -195,10 +195,10 @@ const DebtForm: React.FC<DebtFormProps> = ({ debt, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     name: debt?.name || '',
     type: debt?.type || 'credit_card' as Debt['type'],
-    currentBalance: debt?.currentBalance.toString() || '',
-    interestRate: debt?.interestRate.toString() || '',
-    minimumPayment: debt?.minimumPayment.toString() || '',
-    dueDate: debt?.dueDate?.toString() || '',
+    currentBalance: debt?.currentBalance?.toString() ?? '',
+    interestRate: debt?.interestRate?.toString() ?? '',
+    minimumPayment: debt?.minimumPayment?.toString() ?? '',
+    dueDate: debt?.dueDate !== undefined ? debt.dueDate.toString() : '',
     institution: debt?.institution || '',
   });
 

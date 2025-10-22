@@ -14,7 +14,7 @@ interface BankCSVFormat {
  * Parse CSV file with automatic bank format detection
  */
 export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'credit_card'): Promise<ParsedCSVData> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const errors: string[] = [];
     const transactions: Transaction[] = [];
     let detectedFormat: BankCSVFormat | null = null;
@@ -39,8 +39,6 @@ export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'cre
         const headers = results.meta.fields || [];
         const firstRow = results.data[0] as CSVRow;
 
-        console.log('CSV Headers:', headers);
-
         detectedFormat = bankFormats.find(format => format.detect(headers, firstRow)) || null;
 
         if (!detectedFormat) {
@@ -48,7 +46,13 @@ export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'cre
           detectedFormat = genericFormat;
         }
 
-        console.log(`Detected CSV format: ${detectedFormat.name}`);
+        if (!detectedFormat) {
+          reject(new Error('CSV parsing failed: No suitable parser found'));
+          return;
+        }
+
+        // Store in const to help TypeScript understand it's non-null
+        const format = detectedFormat;
 
         // First pass: count total transactions per date AND detect USAA credit card
         const dateTotals = new Map<string, number>();
@@ -68,7 +72,7 @@ export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'cre
 
             // For USAA format, detect if this is a credit card by checking for "Credit Card Payment" as INCOME
             // Credit card accounts receive payments (positive), checking accounts make payments (negative)
-            if (detectedFormat!.name === 'USAA') {
+            if (format.name === 'USAA') {
               usaaTotalRows++;
               const category = row['Category'] || row['category'] || '';
               const description = row['Description'] || row['description'] || '';
@@ -97,23 +101,22 @@ export const parseCSV = (file: File, accountType?: 'checking' | 'savings' | 'cre
         // Priority 2: Auto-detect for USAA by checking for credit card payment transactions
         let isCreditCardCSV = accountType === 'credit_card';
 
-        if (!isCreditCardCSV && detectedFormat!.name === 'USAA' && usaaCreditCardPaymentCount > 0 && usaaTotalRows > 0) {
+        if (!isCreditCardCSV && format.name === 'USAA' && usaaCreditCardPaymentCount > 0 && usaaTotalRows > 0) {
           const creditCardRatio = usaaCreditCardPaymentCount / usaaTotalRows;
           // If more than 5% of transactions are credit card payments, it's probably a credit card account
           if (creditCardRatio > 0.05) {
             isCreditCardCSV = true;
-            console.log('Auto-detected USAA Credit Card CSV (will invert amounts)');
           }
         }
 
+        // Process as credit card CSV if detected
         if (isCreditCardCSV) {
           dateCounts.set('__USAA_IS_CREDIT_CARD__', 1);
-          console.log('Processing as Credit Card CSV (will invert amounts)');
         }
 
         (results.data as CSVRow[]).forEach((row, index: number) => {
           try {
-            const transaction = detectedFormat!.parse(row, index, dateCounts, dateTotals);
+            const transaction = format.parse(row, index, dateCounts, dateTotals);
             if (transaction) {
               transactions.push(transaction);
             }
@@ -155,7 +158,6 @@ const parseUSAARow = (row: CSVRow, index: number, dateCounts?: Map<string, numbe
   const status = row['Status'] || row['status'] || row['Transaction Status'];
 
   if (!dateStr || !description) {
-    console.warn(`Skipping row ${index + 1}: Missing required fields`);
     return null;
   }
 
@@ -351,16 +353,7 @@ const parseCapitalOneRow = (row: CSVRow, index: number): Transaction | null => {
   const debitStr = row['Debit'];
   const creditStr = row['Credit'];
 
-  console.log(`Capital One row ${index + 1}:`, {
-    debitStr,
-    creditStr,
-    debitType: typeof debitStr,
-    creditType: typeof creditStr,
-    description
-  });
-
   if (!dateStr || !description) {
-    console.warn(`Skipping Capital One row ${index + 1}: Missing date or description`);
     return null;
   }
 
@@ -390,16 +383,11 @@ const parseCapitalOneRow = (row: CSVRow, index: number): Transaction | null => {
     }
   }
 
-  console.log(`Capital One row ${index + 1} parsed:`, { debit, credit });
-
   // Capital One shows debits and credits in separate columns
   // For credit cards: Debits are charges (positive = owe more), Credits are payments (negative = owe less)
   const amount = debit > 0 ? debit : -credit;
 
-  console.log(`Capital One row ${index + 1} final amount:`, amount);
-
   if (amount === 0) {
-    console.warn(`Skipping Capital One row ${index + 1}: Amount is zero`);
     return null;
   }
 

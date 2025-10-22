@@ -263,7 +263,6 @@ function App() {
           recurringBillId: matchingBill.id,
           category: matchingBill.category, // Use recurring bill's category
         };
-        console.log(`Matched transaction "${txWithAccount.description}" with recurring bill "${matchingBill.description}"`);
 
         // ALWAYS mark this bill for potential update (whether projected transaction exists or not)
         billsToUpdate.add(matchingBill.id);
@@ -374,7 +373,6 @@ function App() {
             isPending: false, // Explicitly mark as not pending
           };
           postedCount++;
-          console.log(`Updated pending transaction to posted: ${existing.description} -> ${txWithAccount.description}, Category: ${existing.category} -> ${txWithAccount.category}`);
         } else if (isPendingDuplicate) {
           // Pending transaction re-imported - update with new data (may have better category/recurringBillId)
           updatedTransactions[existingIndex] = {
@@ -385,7 +383,6 @@ function App() {
             category: txWithAccount.recurringBillId ? txWithAccount.category : existing.category, // Use bill category if matched
           };
           updatedCount++;
-          console.log(`Updated pending transaction with better data: ${existing.description}, Category: ${existing.category} -> ${txWithAccount.category}`);
         } else if (existing.isManual) {
           // If existing was manual (user created from projected or added manually), update it
           updatedTransactions[existingIndex] = {
@@ -415,7 +412,6 @@ function App() {
           if (projectedIndex !== -1) {
             // Replace projected transaction with real one
             updatedTransactions[projectedIndex] = txWithAccount;
-            console.log(`Replaced projected transaction with real transaction: "${txWithAccount.description}"`);
             newCount++;
           } else {
             // No projected transaction found, just add the new one
@@ -599,16 +595,14 @@ function App() {
       const pendingUpdate = pendingBillUpdates.find(u => u.billId === bill.id);
       if (!pendingUpdate) return bill;
 
-      let updatedBill = { ...bill };
+      const updatedBill = { ...bill };
 
       if (approval.updateDate) {
         updatedBill.nextDueDate = pendingUpdate.proposedNextDueDate;
-        console.log(`Updated recurring bill "${bill.description}" nextDueDate: ${bill.nextDueDate} → ${pendingUpdate.proposedNextDueDate.toLocaleDateString()}`);
       }
 
       if (approval.updateAmount) {
         updatedBill.amount = pendingUpdate.importedAmount;
-        console.log(`Updated recurring bill "${bill.description}" amount: $${bill.amount.toFixed(2)} → $${pendingUpdate.importedAmount.toFixed(2)}`);
       }
 
       return updatedBill;
@@ -1322,7 +1316,24 @@ function App() {
                               return;
                             }
 
-                            const importedTransactions = transactions.map((tx: any, index: number) => {
+                            interface ImportedTransaction {
+                              id?: string;
+                              date: string;
+                              description?: string;
+                              desc?: string;
+                              merchant?: string;
+                              category?: string;
+                              cat?: string;
+                              amount?: number | string;
+                              amt?: number | string;
+                              isPending?: boolean;
+                              pending?: boolean;
+                              isReconciled?: boolean;
+                              reconciled?: boolean;
+                              cleared?: boolean;
+                            }
+
+                            const importedTransactions = transactions.map((tx: ImportedTransaction, index: number) => {
                               if (!tx.date) throw new Error(`Transaction ${index + 1}: Missing date`);
                               if (!tx.description && !tx.desc && !tx.merchant) throw new Error(`Transaction ${index + 1}: Missing description`);
                               if (tx.amount === undefined && tx.amt === undefined) throw new Error(`Transaction ${index + 1}: Missing amount`);
