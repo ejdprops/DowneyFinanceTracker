@@ -28,6 +28,9 @@ export interface Account {
   minimumPayment?: number; // Minimum payment amount for credit cards
   paymentDueDate?: Date; // Exact payment due date for credit cards
   isDefault?: boolean; // Mark one account as default
+  reconciliationDate?: Date; // Date of last statement reconciliation
+  reconciliationBalance?: number; // Statement ending balance at that date
+  lastReconciliationSource?: string; // e.g., "Apple Card Statement - Jan 2025"
 }
 
 export interface RecurringBill {

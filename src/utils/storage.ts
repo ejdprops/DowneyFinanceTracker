@@ -36,7 +36,17 @@ export const saveAccounts = (accounts: Account[]) => {
 export const loadAccounts = (): Account[] => {
   const data = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
   if (!data) return [];
-  return JSON.parse(data);
+
+  const parsed = JSON.parse(data) as Array<Omit<Account, 'paymentDueDate' | 'reconciliationDate'> & {
+    paymentDueDate?: string;
+    reconciliationDate?: string;
+  }>;
+
+  return parsed.map((acc) => ({
+    ...acc,
+    paymentDueDate: acc.paymentDueDate ? new Date(acc.paymentDueDate) : undefined,
+    reconciliationDate: acc.reconciliationDate ? new Date(acc.reconciliationDate) : undefined,
+  }));
 };
 
 // Active Account ID

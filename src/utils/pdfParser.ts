@@ -8,10 +8,21 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+export interface StatementData {
+  closingDate?: Date;
+  endingBalance?: number;
+  statementPeriod?: string;
+}
+
 interface BankFormat {
   name: string;
   detect: (text: string) => boolean;
   parse: (text: string) => Transaction[];
+  extractStatementData?: (text: string) => StatementData;
+}
+
+export interface ParsedPDFData extends ParsedCSVData {
+  statementData?: StatementData;
 }
 
 /**
@@ -189,6 +200,33 @@ const parseBankOfAmericaStatement = (text: string): Transaction[] => {
 };
 
 /**
+ * Extract Apple Card statement data
+ */
+const extractAppleCardStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // Apple Card PDFs typically have "Closing Date: MM/DD/YYYY"
+  const closingDateMatch = text.match(/Closing Date[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (closingDateMatch) {
+    data.closingDate = new Date(closingDateMatch[1]);
+  }
+
+  // Look for "New Balance" or "Statement Balance"
+  const balanceMatch = text.match(/(?:New Balance|Statement Balance|Closing Balance)[:\s]+\$?([\d,]+\.\d{2})/i);
+  if (balanceMatch) {
+    data.endingBalance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  }
+
+  // Statement period
+  const periodMatch = text.match(/Statement Period[:\s]+(.+?)\s*(?:\n|$)/i);
+  if (periodMatch) {
+    data.statementPeriod = periodMatch[1].trim();
+  }
+
+  return data;
+};
+
+/**
  * Apple Card Statement Parser
  */
 const parseAppleCardStatement = (text: string): Transaction[] => {
@@ -318,6 +356,43 @@ const parseGenericStatement = (text: string): Transaction[] => {
 };
 
 /**
+ * Extract generic statement data
+ */
+const extractGenericStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // Try to find closing/statement date
+  const datePatterns = [
+    /(?:Closing Date|Statement Date|As of)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /(?:Period Ending|Ending Date)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  ];
+
+  for (const pattern of datePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.closingDate = new Date(match[1]);
+      break;
+    }
+  }
+
+  // Try to find ending balance
+  const balancePatterns = [
+    /(?:Ending Balance|New Balance|Statement Balance|Closing Balance)[:\s]+\$?([\d,]+\.\d{2})/i,
+    /(?:Total Balance)[:\s]+\$?([\d,]+\.\d{2})/i,
+  ];
+
+  for (const pattern of balancePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      data.endingBalance = parseFloat(match[1].replace(/,/g, ''));
+      break;
+    }
+  }
+
+  return data;
+};
+
+/**
  * Bank format detection and parsing
  */
 const bankFormats: BankFormat[] = [
@@ -327,28 +402,32 @@ const bankFormats: BankFormat[] = [
                       text.toLowerCase().includes('goldman sachs') ||
                       text.toLowerCase().includes('apple cash'),
     parse: parseAppleCardStatement,
+    extractStatementData: extractAppleCardStatementData,
   },
   {
     name: 'USAA',
     detect: (text) => text.toLowerCase().includes('usaa'),
     parse: parseUSAAStatement,
+    extractStatementData: extractGenericStatementData,
   },
   {
     name: 'Chase',
     detect: (text) => text.toLowerCase().includes('chase'),
     parse: parseChaseStatement,
+    extractStatementData: extractGenericStatementData,
   },
   {
     name: 'Bank of America',
     detect: (text) => text.toLowerCase().includes('bank of america') || text.toLowerCase().includes('bankofamerica'),
     parse: parseBankOfAmericaStatement,
+    extractStatementData: extractGenericStatementData,
   },
 ];
 
 /**
  * Parse bank statement PDF
  */
-export const parseBankStatementPDF = async (file: File): Promise<ParsedCSVData> => {
+export const parseBankStatementPDF = async (file: File): Promise<ParsedPDFData> => {
   const errors: string[] = [];
 
   try {
@@ -366,20 +445,25 @@ export const parseBankStatementPDF = async (file: File): Promise<ParsedCSVData> 
     const detectedFormat = bankFormats.find(format => format.detect(text));
 
     let transactions: Transaction[];
+    let statementData: StatementData | undefined;
 
     if (detectedFormat) {
-      console.log(`Detected bank format: ${detectedFormat.name}`);
       transactions = detectedFormat.parse(text);
+
+      // Extract statement data if parser supports it
+      if (detectedFormat.extractStatementData) {
+        statementData = detectedFormat.extractStatementData(text);
+      }
     } else {
-      console.log('Using generic parser');
       transactions = parseGenericStatement(text);
+      statementData = extractGenericStatementData(text);
     }
 
     if (transactions.length === 0) {
       errors.push('No transactions found in PDF. The format may not be supported.');
     }
 
-    return { transactions, errors };
+    return { transactions, errors, statementData };
   } catch (error) {
     return {
       transactions: [],

@@ -171,7 +171,8 @@ function App() {
   const handleImportComplete = (
     data: ParsedCSVData,
     currentBalance?: number,
-    accountSummary?: { newBalance?: number; minimumPayment?: number; paymentDueDate?: string }
+    accountSummary?: { newBalance?: number; minimumPayment?: number; paymentDueDate?: string },
+    statementData?: { closingDate?: Date; endingBalance?: number; statementPeriod?: string }
   ) => {
     if (!activeAccountId) return;
 
@@ -185,9 +186,18 @@ function App() {
     const billsToUpdate = new Set<string>(); // Track recurring bills that need nextDueDate updated
     const billUpdateData = new Map<string, { amount: number; date: Date }>(); // Track imported transaction data for each bill
 
+    // Mark transactions as reconciled if they're from a statement import
+    const shouldReconcile = statementData?.closingDate !== undefined;
+    const reconciliationDate = statementData?.closingDate;
+
     data.transactions.forEach(importedTx => {
       // Add accountId to imported transaction
       let txWithAccount = { ...importedTx, accountId: activeAccountId };
+
+      // Mark as reconciled if transaction is on or before statement closing date
+      if (shouldReconcile && reconciliationDate && importedTx.date <= reconciliationDate) {
+        txWithAccount.isReconciled = true;
+      }
 
       // Try to match with recurring bills for this account
       const matchingBill = recurringBills.find(bill => {
@@ -488,16 +498,29 @@ function App() {
     }
 
     // Update account balance and summary
-    if (account && (currentBalance !== undefined || accountSummary || calculatedBalance !== undefined)) {
+    if (account && (currentBalance !== undefined || accountSummary || calculatedBalance !== undefined || statementData)) {
       const updatedAccount = { ...account };
 
-      // Priority: explicit currentBalance > accountSummary.newBalance > calculatedBalance
-      if (currentBalance !== undefined) {
-        updatedAccount.availableBalance = currentBalance;
-      } else if (accountSummary?.newBalance !== undefined) {
-        updatedAccount.availableBalance = accountSummary.newBalance;
-      } else if (calculatedBalance !== undefined) {
-        updatedAccount.availableBalance = calculatedBalance;
+      // If this is a statement import with reconciliation data, set reconciliation point
+      if (statementData?.closingDate && statementData?.endingBalance !== undefined) {
+        updatedAccount.reconciliationDate = statementData.closingDate;
+        updatedAccount.reconciliationBalance = statementData.endingBalance;
+
+        // Create source string
+        const monthYear = statementData.closingDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        updatedAccount.lastReconciliationSource = `${account.institution} Statement - ${monthYear}`;
+
+        // Set available balance to statement balance
+        updatedAccount.availableBalance = statementData.endingBalance;
+      } else {
+        // Priority: explicit currentBalance > accountSummary.newBalance > calculatedBalance
+        if (currentBalance !== undefined) {
+          updatedAccount.availableBalance = currentBalance;
+        } else if (accountSummary?.newBalance !== undefined) {
+          updatedAccount.availableBalance = accountSummary.newBalance;
+        } else if (calculatedBalance !== undefined) {
+          updatedAccount.availableBalance = calculatedBalance;
+        }
       }
 
       if (accountSummary) {
@@ -767,11 +790,44 @@ function App() {
     }
   };
 
+  // Helper function to calculate current balance from reconciliation point
+  const calculateBalanceFromReconciliation = useCallback((acc: Account, txs: Transaction[]): number => {
+    if (!acc.reconciliationDate || acc.reconciliationBalance === undefined) {
+      // No reconciliation point, use manual availableBalance
+      return acc.availableBalance || 0;
+    }
+
+    // Start with reconciliation balance
+    let balance = acc.reconciliationBalance;
+
+    // Add all transactions after reconciliation date (including pending and manual)
+    const transactionsAfterReconciliation = txs.filter(t =>
+      t.accountId === acc.id &&
+      t.date > acc.reconciliationDate! &&
+      !t.description.includes('(Projected)') // Exclude projected transactions
+    );
+
+    // Sum up amounts
+    for (const tx of transactionsAfterReconciliation) {
+      balance += tx.amount;
+    }
+
+    return Math.round(balance * 100) / 100;
+  }, []);
+
+  // Get effective available balance for current account
+  const effectiveAvailableBalance = useMemo(() => {
+    if (!account) return 0;
+    return calculateBalanceFromReconciliation(account, transactions);
+  }, [account, transactions, calculateBalanceFromReconciliation]);
+
   // All transactions with projections - always includes projections for balance calculations
   const allTransactionsWithProjections = useMemo(() => {
     if (!account) {
       return calculateBalances(accountTransactions, 0);
     }
+
+    const effectiveBalance = calculateBalanceFromReconciliation(account, transactions);
 
     // Calculate days to end of 2nd month out (current month + 2 more months)
     const today = new Date();
@@ -807,17 +863,16 @@ function App() {
         };
       });
 
-    return calculateBalances([...accountTransactions, ...projections], account.availableBalance);
-  }, [account, accountTransactions, accountRecurringBills, dismissedProjections, projectedState, projectedVisibility]);
+    return calculateBalances([...accountTransactions, ...projections], effectiveBalance);
+  }, [account, accountTransactions, accountRecurringBills, dismissedProjections, projectedState, projectedVisibility, transactions, calculateBalanceFromReconciliation]);
 
   // Transactions for display in register - filtered by showProjections checkbox
   const allTransactions = useMemo(() => {
     if (!showProjections) {
-      return calculateBalances(accountTransactions, account?.availableBalance || 0);
+      return calculateBalances(accountTransactions, effectiveAvailableBalance);
     }
     return allTransactionsWithProjections;
-  }, [showProjections, allTransactionsWithProjections, accountTransactions, account]);
-
+  }, [showProjections, allTransactionsWithProjections, accountTransactions, effectiveAvailableBalance]);
 
   // Calculate current balance (most recent non-projected transaction) - memoized
   const currentBalance = useMemo(() => {
@@ -827,12 +882,12 @@ function App() {
     );
 
     if (actualTransactions.length === 0) {
-      return account?.availableBalance || 0;
+      return effectiveAvailableBalance;
     }
 
     // The last actual transaction in the list has the current balance
     return actualTransactions[actualTransactions.length - 1].balance;
-  }, [allTransactions, account]);
+  }, [allTransactions, effectiveAvailableBalance]);
 
   // Calculate next statement due date for credit cards - memoized
   const getNextDueDate = useCallback((dueDay: number): Date => {
@@ -1095,6 +1150,12 @@ function App() {
                   <p className="text-gray-400 text-xs flex items-center gap-1">
                     <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-400"></span>
                     {account?.institution} •••• {account?.accountNumber.slice(-4)}
+                    {account?.reconciliationDate && account?.reconciliationBalance !== undefined && (
+                      <>
+                        <span className="mx-1">|</span>
+                        📍 Reconciled: {account.reconciliationDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })} (${account.reconciliationBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                      </>
+                    )}
                   </p>
                 </div>
               </div>
@@ -1265,13 +1326,16 @@ function App() {
                           }
                           try {
                             let data: ParsedCSVData;
+                            let statementData: any = undefined;
                             if (isPDF) {
                               const { parseBankStatementPDF } = await import('./utils/pdfParser');
-                              data = await parseBankStatementPDF(file);
+                              const pdfData = await parseBankStatementPDF(file);
+                              data = pdfData;
+                              statementData = pdfData.statementData;
                             } else {
                               data = await parseCSV(file, account?.accountType);
                             }
-                            handleImportComplete(data);
+                            handleImportComplete(data, undefined, undefined, statementData);
                           } catch (error) {
                             console.error('Error parsing file:', error);
                             alert(`Failed to parse ${isPDF ? 'PDF' : 'CSV'} file. Please check the format.`);
