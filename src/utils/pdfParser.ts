@@ -104,21 +104,53 @@ const parseChaseStatement = (text: string): Transaction[] => {
   const transactions: Transaction[] = [];
   const lines = text.split('\n');
 
-  // Chase format typically has:
-  // MM/DD Description Amount
-  const transactionRegex = /(\d{2}\/\d{2})\s+(.+?)\s+([-+]?\$?[\d,]+\.\d{2})/g;
-
+  // Find the ACCOUNT ACTIVITY section
+  let inActivitySection = false;
   let index = 0;
   const currentYear = new Date().getFullYear();
 
-  for (const line of lines) {
-    const matches = [...line.matchAll(transactionRegex)];
+  // Keywords that indicate we're no longer in the transaction section
+  const endSectionKeywords = ['FEES CHARGED', 'INTEREST CHARGED', 'TOTAL FEES', 'TOTAL INTEREST', 'Year-to-date', '2025 Totals'];
 
-    for (const match of matches) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Start parsing when we hit ACCOUNT ACTIVITY
+    if (line.includes('ACCOUNT ACTIVITY')) {
+      inActivitySection = true;
+      continue;
+    }
+
+    // Stop parsing if we hit end section keywords
+    if (inActivitySection && endSectionKeywords.some(keyword => line.includes(keyword))) {
+      inActivitySection = false;
+      continue;
+    }
+
+    // Skip header rows
+    if (line.includes('Date of Transaction') || line.includes('Merchant Name') ||
+        line.includes('PAYMENTS AND OTHER CREDITS') || line.includes('PURCHASE')) {
+      continue;
+    }
+
+    // Only process lines when in activity section
+    if (!inActivitySection) continue;
+
+    // Chase transaction format: MM/DD DESCRIPTION AMOUNT
+    // Match: date at start, description in middle, amount at end (with or without minus sign)
+    const match = line.match(/^(\d{2}\/\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/);
+
+    if (match) {
       try {
         const dateStr = `${match[1]}/${currentYear}`;
-        const description = match[2].trim();
-        const amountStr = match[3].replace(/[$,]/g, '');
+        let description = match[2].trim();
+        const amountStr = match[3];
+
+        // Skip if description contains certain noise patterns
+        if (description.includes('TOTAL') || description.includes('Year-to-date') ||
+            description.length > 200) {
+          continue;
+        }
 
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) continue;
@@ -140,7 +172,7 @@ const parseChaseStatement = (text: string): Transaction[] => {
 
         index++;
       } catch (error) {
-        console.warn('Failed to parse line:', line, error);
+        // Skip invalid lines silently
       }
     }
   }
@@ -356,6 +388,31 @@ const parseGenericStatement = (text: string): Transaction[] => {
 };
 
 /**
+ * Extract Chase statement data
+ */
+const extractChaseStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // Chase format: "Opening/Closing Date 09/11/25 - 10/10/25"
+  const closingDateMatch = text.match(/Opening\/Closing Date\s+\d{2}\/\d{2}\/\d{2}\s*-\s*(\d{2}\/\d{2}\/\d{2})/i);
+  if (closingDateMatch) {
+    // Convert 2-digit year to 4-digit
+    const dateParts = closingDateMatch[1].split('/');
+    const year = parseInt(dateParts[2]);
+    const fullYear = year < 50 ? 2000 + year : 1900 + year;
+    data.closingDate = new Date(`${dateParts[0]}/${dateParts[1]}/${fullYear}`);
+  }
+
+  // Chase format: "New Balance $13,006.39"
+  const balanceMatch = text.match(/New Balance[:\s]+\$?([\d,]+\.\d{2})/i);
+  if (balanceMatch) {
+    data.endingBalance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  }
+
+  return data;
+};
+
+/**
  * Extract generic statement data
  */
 const extractGenericStatementData = (text: string): StatementData => {
@@ -365,12 +422,22 @@ const extractGenericStatementData = (text: string): StatementData => {
   const datePatterns = [
     /(?:Closing Date|Statement Date|As of)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
     /(?:Period Ending|Ending Date)[:\s]+(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /Opening\/Closing Date\s+\d{2}\/\d{2}\/\d{2}\s*-\s*(\d{2}\/\d{2}\/\d{2})/i, // Chase format
   ];
 
   for (const pattern of datePatterns) {
     const match = text.match(pattern);
     if (match) {
-      data.closingDate = new Date(match[1]);
+      const dateStr = match[1];
+      // Handle 2-digit year
+      if (dateStr.match(/\d{2}\/\d{2}\/\d{2}$/)) {
+        const parts = dateStr.split('/');
+        const year = parseInt(parts[2]);
+        const fullYear = year < 50 ? 2000 + year : 1900 + year;
+        data.closingDate = new Date(`${parts[0]}/${parts[1]}/${fullYear}`);
+      } else {
+        data.closingDate = new Date(dateStr);
+      }
       break;
     }
   }
@@ -414,7 +481,7 @@ const bankFormats: BankFormat[] = [
     name: 'Chase',
     detect: (text) => text.toLowerCase().includes('chase'),
     parse: parseChaseStatement,
-    extractStatementData: extractGenericStatementData,
+    extractStatementData: extractChaseStatementData,
   },
   {
     name: 'Bank of America',
