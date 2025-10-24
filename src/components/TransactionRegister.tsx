@@ -418,7 +418,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
               </tr>
             ) : (
               filteredTransactions.map((transaction) => (
-                <tr key={transaction.id} className="hover:bg-gray-700/30 transition-colors">
+                <tr key={transaction.id} className={`hover:bg-gray-700/30 transition-colors ${transaction.isReconciled ? 'opacity-50' : ''}`}>
                   <td className="px-3 py-2 text-center">
                     <input
                       type="checkbox"
@@ -530,19 +530,23 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                         </button>
                       )}
                       {transaction.isReconciled && (
-                        <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-300 rounded-lg border border-green-500/30">
-                          Cleared
+                        <span className="px-2 py-0.5 text-xs bg-green-500/20 text-green-300 rounded-lg border border-green-500/30 opacity-100">
+                          Reconciled
                         </span>
                       )}
                       {transaction.description.includes('(Projected)') ? (
                         <span className="px-2 py-0.5 text-xs bg-purple-500/20 text-purple-300 rounded-lg border border-purple-500/30">
                           Projected
                         </span>
-                      ) : transaction.isPending && !transaction.isReconciled && (
+                      ) : transaction.isPending && !transaction.isReconciled ? (
                         <span className="px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-300 rounded-lg border border-yellow-500/30">
                           Pending
                         </span>
-                      )}
+                      ) : transaction.isPosted && !transaction.isReconciled ? (
+                        <span className="px-2 py-0.5 text-xs bg-white/90 text-green-600 rounded-lg border border-green-500/30 font-medium">
+                          Posted
+                        </span>
+                      ) : null}
                       {transaction.isManual && !transaction.description.includes('(Projected)') && (
                         <span className="px-2 py-0.5 text-xs bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
                           Manual

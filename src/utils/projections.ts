@@ -105,13 +105,14 @@ export const getNextOccurrence = (
 /**
  * Calculate running balances for transactions
  *
- * The currentAccountBalance should be the CURRENT balance shown in your bank (after all actual transactions including pending).
- * We find the most recent actual (non-projected) transaction, set its balance to currentAccountBalance,
- * then work backwards through earlier transactions and forwards through future projected transactions.
+ * Balance calculation now anchors on the most recent RECONCILED transaction.
+ * If there's a reconciled transaction, we use its balance and work forwards/backwards from there.
+ * Otherwise, we fall back to using the current account balance with the most recent actual transaction.
  */
 export const calculateBalances = (
   transactions: Transaction[],
-  currentAccountBalance: number = 0
+  currentAccountBalance: number = 0,
+  reconciledBalance?: number
 ): Transaction[] => {
   if (transactions.length === 0) return [];
 
@@ -126,7 +127,46 @@ export const calculateBalances = (
     return a.id.localeCompare(b.id);
   });
 
-  // Find the index of the most recent actual (non-projected) transaction
+  // Find the index of the most recent RECONCILED transaction
+  // This is our anchor point for balance calculations
+  let mostRecentReconciledIndex = -1;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (sorted[i].isReconciled) {
+      mostRecentReconciledIndex = i;
+      break;
+    }
+  }
+
+  // If we have a reconciled transaction and a reconciled balance, use that as anchor
+  if (mostRecentReconciledIndex !== -1 && reconciledBalance !== undefined) {
+    // The reconciledBalance is the statement ending balance (balance AFTER all reconciled transactions)
+    // Set the most recent reconciled transaction's balance to reconciledBalance
+    const result: Transaction[] = [];
+
+    // Work backwards from reconciled transaction to calculate starting balance (before first transaction)
+    let startingBalance = reconciledBalance;
+    for (let i = mostRecentReconciledIndex; i >= 0; i--) {
+      const isVisible = sorted[i].isProjectedVisible !== false;
+      if (isVisible) {
+        startingBalance -= sorted[i].amount;
+      }
+    }
+
+    // Now work forwards through ALL transactions to calculate balances
+    let balance = startingBalance;
+    for (let i = 0; i < sorted.length; i++) {
+      const isVisible = sorted[i].isProjectedVisible !== false;
+      if (isVisible) {
+        balance += sorted[i].amount;
+        balance = Math.round(balance * 100) / 100;
+      }
+      result.push({ ...sorted[i], balance });
+    }
+
+    return result;
+  }
+
+  // Fallback: Find the index of the most recent actual (non-projected) transaction
   // This includes both cleared AND pending transactions from CSV imports
   // The currentAccountBalance should reflect the balance after all actual transactions (including pending)
   let mostRecentActualIndex = -1;

@@ -37,12 +37,30 @@ const extractTextFromPDF = async (file: File): Promise<string> => {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .join(' ');
+
+    // Process text items with proper line breaks
+    // PDF.js provides items with x/y coordinates - we need to detect line breaks
+    let pageText = '';
+    let lastY = -1;
+
+    for (const item of textContent.items) {
+      if ('str' in item && 'transform' in item) {
+        const y = item.transform[5]; // Y coordinate
+
+        // If Y coordinate changed significantly, it's a new line
+        if (lastY !== -1 && Math.abs(y - lastY) > 2) {
+          pageText += '\n';
+        }
+
+        pageText += item.str + ' ';
+        lastY = y;
+      }
+    }
+
     fullText += pageText + '\n';
   }
 
+  console.log(`[PDF Extract] Extracted ${fullText.split('\n').length} lines from ${pdf.numPages} pages`);
   return fullText;
 };
 
@@ -52,28 +70,118 @@ const extractTextFromPDF = async (file: File): Promise<string> => {
 const parseUSAAStatement = (text: string): Transaction[] => {
   const transactions: Transaction[] = [];
   const lines = text.split('\n');
+  const currentYear = new Date().getFullYear();
 
-  // USAA format typically has lines like:
-  // 01/15/2024 DESCRIPTION HERE -$123.45
-  // or with tabs/spaces separating date, description, and amount
+  console.log(`[USAA Parser] Starting parse, ${lines.length} lines total`);
 
-  const transactionRegex = /(\d{1,2}\/\d{1,2}\/\d{4})\s+(.+?)\s+([-+]?\$?[\d,]+\.?\d{0,2})/g;
+  // USAA PDF format has transactions split across multiple lines:
+  // Line 1: MM/DD   DESCRIPTION (or start of description)
+  // Line 2-N: Description continuation
+  // Line N+1: $DEBIT   $CREDIT (or 0/-)
+  // Line N+2: $BALANCE
 
   let index = 0;
-  for (const line of lines) {
-    const matches = [...line.matchAll(transactionRegex)];
+  let i = 0;
 
-    for (const match of matches) {
-      try {
-        const dateStr = match[1];
-        const description = match[2].trim();
-        const amountStr = match[3].replace(/[$,]/g, '');
+  while (i < lines.length) {
+    const line = lines[i].trim();
 
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) continue;
+    // Skip headers and summary
+    if (!line ||
+        line.includes('Date   Description') ||
+        line.includes('Transactions') ||
+        line.includes('Page ') ||
+        line.match(/^\d{2}\/\d{2}\/\d{4} to \d{2}\/\d{2}\/\d{4}/)) {
+      i++;
+      continue;
+    }
 
-        const amount = parseFloat(amountStr);
-        if (isNaN(amount)) continue;
+    // Match lines starting with MM/DD date
+    const dateMatch = line.match(/^(\d{2})\/(\d{2})\s+(.+)$/);
+
+    if (dateMatch) {
+      const month = parseInt(dateMatch[1]);
+      const day = parseInt(dateMatch[2]);
+      let description = dateMatch[3].trim();
+
+      // Skip Beginning/Ending Balance
+      if (description.includes('Beginning Balance') || description.includes('Ending Balance')) {
+        i++;
+        continue;
+      }
+
+      // Look ahead for description continuation and amounts
+      let debit = 0;
+      let credit = 0;
+      let j = i + 1;
+      let foundAmounts = false;
+
+      while (j < lines.length && j < i + 10) {
+        const nextLine = lines[j].trim();
+
+        // Check for amounts ($XX.XX format)
+        const dollarAmounts = nextLine.match(/\$[\d,]+\.\d{2}/g);
+
+        if (dollarAmounts && dollarAmounts.length >= 1) {
+          // Found amount line
+          if (dollarAmounts.length >= 2) {
+            // Two amounts: TRANSACTION_AMOUNT   RUNNING_BALANCE
+            // The first amount is the transaction, second is the running balance (we ignore balance)
+            const transactionAmt = parseFloat(dollarAmounts[0].replace(/[$,]/g, ''));
+
+            // Determine if this is a debit or credit based on description
+            const isCredit = /\b(deposit|transfer cr|ach dep|interest paid)\b/i.test(description);
+            if (isCredit) {
+              credit = transactionAmt;
+              debit = 0;
+              console.log(`[USAA Parser] Two amounts - CREDIT: $${credit} (balance ignored) from line: "${nextLine}"`);
+            } else {
+              debit = transactionAmt;
+              credit = 0;
+              console.log(`[USAA Parser] Two amounts - DEBIT: $${debit} (balance ignored) from line: "${nextLine}"`);
+            }
+          } else {
+            // Single amount
+            const amt = parseFloat(dollarAmounts[0].replace(/[$,]/g, ''));
+
+            // Determine debit vs credit from description
+            // Credits are: deposits, transfers IN, interest paid
+            // Must be more specific to avoid false matches (e.g., "DEPT" != "DEPOSIT")
+            const isCredit = /\b(deposit|transfer cr|ach dep|interest paid)\b/i.test(description);
+            if (isCredit) {
+              credit = amt;
+              console.log(`[USAA Parser] Single amount (credit): $${credit} - matched "${description.substring(0, 50)}"`);
+            } else {
+              debit = amt;
+              console.log(`[USAA Parser] Single amount (debit): $${debit} - from "${description.substring(0, 50)}"`);
+            }
+          }
+
+          foundAmounts = true;
+          break;
+        } else if (nextLine.match(/^\d{2}\/\d{2}/)) {
+          // Hit next transaction
+          break;
+        } else if (nextLine && nextLine.length > 2 && !nextLine.match(/^[0-9\s\-]+$/)) {
+          // Description continuation (not just numbers)
+          description += ' ' + nextLine;
+        }
+
+        j++;
+      }
+
+      if (foundAmounts && (debit > 0 || credit > 0)) {
+        // USAA statement format for checking accounts:
+        // - Debits (withdrawals, charges) = money leaving = stored as NEGATIVE in our system
+        // - Credits (deposits) = money entering = stored as POSITIVE in our system
+        const amount = credit > 0 ? credit : -debit;
+        const date = new Date(currentYear, month - 1, day);
+
+        description = description.replace(/\s+/g, ' ').trim();
+
+        if (index < 5) {
+          console.log(`[USAA Parser] Match ${index}: ${month}/${day} "${description.substring(0, 50)}" $${amount}`);
+        }
 
         transactions.push({
           id: `pdf-${date.getTime()}-${index}`,
@@ -88,12 +196,15 @@ const parseUSAAStatement = (text: string): Transaction[] => {
         });
 
         index++;
-      } catch (error) {
-        console.warn('Failed to parse line:', line, error);
       }
+
+      i = j + 1;
+    } else {
+      i++;
     }
   }
 
+  console.log(`[USAA Parser] Parsed ${transactions.length} transactions`);
   return transactions;
 };
 
@@ -104,51 +215,51 @@ const parseChaseStatement = (text: string): Transaction[] => {
   const transactions: Transaction[] = [];
   const lines = text.split('\n');
 
-  // Find the ACCOUNT ACTIVITY section
-  let inActivitySection = false;
   let index = 0;
   const currentYear = new Date().getFullYear();
 
-  // Keywords that indicate we're no longer in the transaction section
-  const endSectionKeywords = ['FEES CHARGED', 'INTEREST CHARGED', 'TOTAL FEES', 'TOTAL INTEREST', 'Year-to-date', '2025 Totals'];
+  console.log(`[Chase Parser] Starting parse, ${lines.length} lines total`);
 
+  // Simple approach: scan all lines and extract anything that looks like a transaction
+  // Format: MM/DD DESCRIPTION AMOUNT (or AMOUNT at end)
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
 
-    // Start parsing when we hit ACCOUNT ACTIVITY
-    if (line.includes('ACCOUNT ACTIVITY')) {
-      inActivitySection = true;
+    // Skip empty lines and headers
+    if (!line ||
+        line.includes('Date of Transaction') ||
+        line.includes('Merchant Name') ||
+        line.includes('ACCOUNT ACTIVITY') ||
+        line.includes('INTEREST CHARGES') ||
+        line.includes('FEES CHARGED') ||
+        line.includes('Opening/Closing Date') ||
+        line.includes('Payment Due Date') ||
+        line.includes('New Balance') ||
+        line.includes('Minimum Payment')) {
       continue;
     }
 
-    // Stop parsing if we hit end section keywords
-    if (inActivitySection && endSectionKeywords.some(keyword => line.includes(keyword))) {
-      inActivitySection = false;
-      continue;
+    // Try multiple patterns for Chase transactions
+    // Pattern 1: MM/DD DESCRIPTION AMOUNT (most common)
+    let match = line.match(/^(\d{2}\/\d{2})\s+(.+?)\s+(-?[\d,]+\.\d{2})$/);
+
+    // Pattern 2: MM/DD DESCRIPTION with amount in the middle (sometimes happens)
+    if (!match) {
+      match = line.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([-\d,]+\.\d{2})\s+.*$/);
     }
-
-    // Skip header rows
-    if (line.includes('Date of Transaction') || line.includes('Merchant Name') ||
-        line.includes('PAYMENTS AND OTHER CREDITS') || line.includes('PURCHASE')) {
-      continue;
-    }
-
-    // Only process lines when in activity section
-    if (!inActivitySection) continue;
-
-    // Chase transaction format: MM/DD DESCRIPTION AMOUNT
-    // Match: date at start, description in middle, amount at end (with or without minus sign)
-    const match = line.match(/^(\d{2}\/\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/);
 
     if (match) {
       try {
         const dateStr = `${match[1]}/${currentYear}`;
         let description = match[2].trim();
-        const amountStr = match[3];
+        const amountStr = match[3].replace(/,/g, ''); // Remove commas from amount
 
-        // Skip if description contains certain noise patterns
-        if (description.includes('TOTAL') || description.includes('Year-to-date') ||
-            description.length > 200) {
+        // Skip if description contains noise patterns
+        if (description.includes('TOTAL') ||
+            description.includes('Year-to-date') ||
+            description.includes('Page ') ||
+            description.length > 200 ||
+            description.length < 2) {
           continue;
         }
 
@@ -157,6 +268,11 @@ const parseChaseStatement = (text: string): Transaction[] => {
 
         const amount = parseFloat(amountStr);
         if (isNaN(amount)) continue;
+
+        // Log first 5 matches to verify
+        if (index < 5) {
+          console.log(`[Chase Parser] Match ${index}: Date=${match[1]}, Desc="${description.substring(0, 40)}", Amount=${amount}`);
+        }
 
         transactions.push({
           id: `pdf-${date.getTime()}-${index}`,
@@ -177,6 +293,7 @@ const parseChaseStatement = (text: string): Transaction[] => {
     }
   }
 
+  console.log(`[Chase Parser] Parsed ${transactions.length} transactions`);
   return transactions;
 };
 
@@ -413,6 +530,48 @@ const extractChaseStatementData = (text: string): StatementData => {
 };
 
 /**
+ * Extract USAA statement data
+ */
+const extractUSAAStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // USAA format: "Statement Period: 08/23/2025 to 09/22/2025"
+  const periodMatch = text.match(/Statement Period:\s+\d{2}\/\d{2}\/\d{4}\s+to\s+(\d{2}\/\d{2}\/\d{4})/i);
+  if (periodMatch) {
+    data.closingDate = new Date(periodMatch[1]);
+  }
+
+  // USAA format: "Ending Balance   $1,058.21"
+  const balanceMatch = text.match(/Ending Balance\s+\$?([\d,]+\.\d{2})/i);
+  if (balanceMatch) {
+    data.endingBalance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  }
+
+  return data;
+};
+
+/**
+ * Extract Bank of America statement data
+ */
+const extractBankOfAmericaStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // Bank of America format: "Statement Period: MM/DD/YYYY - MM/DD/YYYY"
+  const periodMatch = text.match(/Statement Period:\s+\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  if (periodMatch) {
+    data.closingDate = new Date(periodMatch[1]);
+  }
+
+  // Bank of America format: "Ending balance on MM/DD/YYYY   $X,XXX.XX"
+  const balanceMatch = text.match(/Ending balance(?:\s+on\s+\d{1,2}\/\d{1,2}\/\d{4})?\s+\$?([\d,]+\.\d{2})/i);
+  if (balanceMatch) {
+    data.endingBalance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  }
+
+  return data;
+};
+
+/**
  * Extract generic statement data
  */
 const extractGenericStatementData = (text: string): StatementData => {
@@ -475,7 +634,7 @@ const bankFormats: BankFormat[] = [
     name: 'USAA',
     detect: (text) => text.toLowerCase().includes('usaa'),
     parse: parseUSAAStatement,
-    extractStatementData: extractGenericStatementData,
+    extractStatementData: extractUSAAStatementData,
   },
   {
     name: 'Chase',
@@ -487,7 +646,7 @@ const bankFormats: BankFormat[] = [
     name: 'Bank of America',
     detect: (text) => text.toLowerCase().includes('bank of america') || text.toLowerCase().includes('bankofamerica'),
     parse: parseBankOfAmericaStatement,
-    extractStatementData: extractGenericStatementData,
+    extractStatementData: extractBankOfAmericaStatementData,
   },
 ];
 
@@ -511,11 +670,27 @@ export const parseBankStatementPDF = async (file: File): Promise<ParsedPDFData> 
     // Detect bank format
     const detectedFormat = bankFormats.find(format => format.detect(text));
 
+    if (detectedFormat) {
+      console.log(`[PDF Parser] Detected bank: ${detectedFormat.name}`);
+    } else {
+      console.log('[PDF Parser] No specific bank format detected, using generic parser');
+    }
+
     let transactions: Transaction[];
     let statementData: StatementData | undefined;
 
     if (detectedFormat) {
       transactions = detectedFormat.parse(text);
+
+      // Chase credit card PDFs have inverted signs - fix them
+      // In Chase PDFs: positive = charges, negative = payments
+      // We need: negative = charges (debt), positive = payments (credit)
+      if (detectedFormat.name === 'Chase') {
+        transactions = transactions.map(tx => ({
+          ...tx,
+          amount: -tx.amount // Invert the sign
+        }));
+      }
 
       // Extract statement data if parser supports it
       if (detectedFormat.extractStatementData) {

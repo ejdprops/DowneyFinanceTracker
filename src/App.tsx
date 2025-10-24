@@ -40,7 +40,7 @@ declare const __APP_OWNER__: string;
 // Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
 const APP_OWNER = __APP_OWNER__;
-const VERSION = '1.8.1'; // Redesigned mobile header to match desktop design
+const VERSION = '1.9.0'; // Added statement reconciliation and fixed Chase PDF parser
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -182,7 +182,8 @@ function App() {
     let skippedCount = 0;
     let postedCount = 0; // Track pending->posted transitions
 
-    const updatedTransactions = [...transactions];
+    const originalTransactions = [...transactions]; // Keep original for duplicate checking
+    const updatedTransactions = [...transactions]; // Will be modified as we import
     const billsToUpdate = new Set<string>(); // Track recurring bills that need nextDueDate updated
     const billUpdateData = new Map<string, { amount: number; date: Date }>(); // Track imported transaction data for each bill
 
@@ -274,16 +275,41 @@ function App() {
           category: matchingBill.category, // Use recurring bill's category
         };
 
-        // ALWAYS mark this bill for potential update (whether projected transaction exists or not)
-        billsToUpdate.add(matchingBill.id);
+        // Check if there's already a projected transaction for the next occurrence of this bill
+        // Calculate what the next occurrence would be
+        const currentDueDate = typeof matchingBill.nextDueDate === 'string'
+          ? new Date(matchingBill.nextDueDate + 'T00:00:00')
+          : new Date(matchingBill.nextDueDate);
 
-        // Store the imported transaction data for this bill (use most recent if multiple matches)
-        const existingData = billUpdateData.get(matchingBill.id);
-        if (!existingData || txWithAccount.date > existingData.date) {
-          billUpdateData.set(matchingBill.id, {
-            amount: txWithAccount.amount,
-            date: txWithAccount.date
-          });
+        const proposedNextDueDate = getNextOccurrence(
+          currentDueDate,
+          matchingBill.frequency,
+          matchingBill.dayOfMonth,
+          matchingBill.dayOfWeek,
+          matchingBill.weekOfMonth
+        );
+
+        // Check if there's already a projected transaction beyond the imported transaction date
+        const hasProjectedTransaction = updatedTransactions.some(t => {
+          if (!t.description.includes('(Projected)')) return false;
+          if (t.recurringBillId !== matchingBill.id) return false;
+          // Check if projected transaction is after the imported transaction and near the proposed next due date
+          return t.date > txWithAccount.date &&
+                 Math.abs(t.date.getTime() - proposedNextDueDate.getTime()) <= 7 * 24 * 60 * 60 * 1000; // Within 7 days
+        });
+
+        // Only mark bill for update if there's NO projected transaction already
+        if (!hasProjectedTransaction) {
+          billsToUpdate.add(matchingBill.id);
+
+          // Store the imported transaction data for this bill (use most recent if multiple matches)
+          const existingData = billUpdateData.get(matchingBill.id);
+          if (!existingData || txWithAccount.date > existingData.date) {
+            billUpdateData.set(matchingBill.id, {
+              amount: txWithAccount.amount,
+              date: txWithAccount.date
+            });
+          }
         }
 
       }
@@ -291,14 +317,15 @@ function App() {
       // Check for existing transaction by:
       // 1. ID (exact match within same account)
       // 2. Description + amount + account (duplicate detection - ignoring date for pending->posted)
-      const existingByIdIndex = updatedTransactions.findIndex(t =>
+      // NOTE: Check against ORIGINAL transactions, not updated ones (to allow duplicate imports in same batch)
+      const existingByIdIndex = originalTransactions.findIndex(t =>
         t.id === txWithAccount.id && t.accountId === activeAccountId
       );
 
       // For pending transactions that have posted OR pending duplicates, we need to match by description + amount
       // This allows us to find the same transaction even if the date changed or it's being re-imported
       // Use fuzzy matching for description since USAA and other banks may update the description when posting
-      const existingPendingIndex = updatedTransactions.findIndex(t => {
+      const existingPendingIndex = originalTransactions.findIndex(t => {
         if (t.accountId !== activeAccountId || !t.isPending) return false;
 
         // Amount must match closely
@@ -343,13 +370,69 @@ function App() {
       });
 
       // Regular duplicate detection (same date + description + amount)
-      const existingByDataIndex = updatedTransactions.findIndex(t =>
-        t.accountId === activeAccountId &&
-        !t.isPending && // Don't match pending transactions here
-        t.date.toDateString() === txWithAccount.date.toDateString() &&
-        t.description === txWithAccount.description &&
-        Math.abs(t.amount - txWithAccount.amount) < 0.01
-      );
+      // Use fuzzy matching for description to handle PDF variations
+      // This includes reconciled transactions to prevent re-importing them
+      // NOTE: Check against ORIGINAL transactions, not updated ones (to allow duplicate imports in same batch)
+      const existingByDataIndex = originalTransactions.findIndex(t => {
+        if (t.accountId !== activeAccountId) return false;
+
+        // Skip pending transactions (they're handled by existingPendingIndex)
+        if (t.isPending) return false;
+
+        // Date must match
+        if (t.date.toDateString() !== txWithAccount.date.toDateString()) return false;
+
+        // Amount must match closely
+        if (Math.abs(t.amount - txWithAccount.amount) >= 0.01) return false;
+
+        // Description fuzzy matching
+        const existingDesc = t.description.toLowerCase().trim();
+        const newDesc = txWithAccount.description.toLowerCase().trim();
+
+        // Exact match
+        if (existingDesc === newDesc) return true;
+
+        // Check if one contains the other (PDF often has more detail)
+        if (existingDesc.includes(newDesc) || newDesc.includes(existingDesc)) return true;
+
+        // Extract account/transaction identifiers (e.g., "***********8946")
+        // Pattern: multiple asterisks followed by 4+ alphanumeric characters at the end
+        const extractIdentifier = (desc: string) => {
+          const match = desc.match(/\*{3,}(\w{4,})$/);
+          return match ? match[1] : null;
+        };
+
+        const existingId = extractIdentifier(existingDesc);
+        const newId = extractIdentifier(newDesc);
+
+        // If both have identifiers and they match, this is the same transaction
+        if (existingId && newId && existingId === newId) return true;
+
+        // Extract meaningful words (filter out common prefixes, numbers, and short words)
+        const cleanWords = (desc: string) => {
+          return desc
+            .replace(/^(ach withdrawal|ach deposit|debit card|pos|atm)\s+\d+\s+/i, '') // Remove common prefixes with dates
+            .replace(/\*{3,}\w+$/, '') // Remove account identifiers for word matching
+            .split(/\s+/)
+            .map(w => w.replace(/[^a-z0-9]/g, '')) // Remove special characters
+            .filter(w => w.length >= 3 && !/^\d+$/.test(w)); // Keep words 3+ chars, exclude pure numbers
+        };
+
+        const existingWords = new Set(cleanWords(existingDesc));
+        const newWords = new Set(cleanWords(newDesc));
+
+        // Count common meaningful words
+        const commonWords = [...existingWords].filter(w => newWords.has(w)).length;
+
+        // Match if they share at least 5 meaningful words (handles "CHASE CREDIT CRD AUTOPAY" scenario)
+        if (commonWords >= 5) return true;
+
+        // OR match if they share 70% of the smaller word set (handles shorter descriptions)
+        const minWords = Math.min(existingWords.size, newWords.size);
+        if (minWords > 0 && commonWords / minWords >= 0.7) return true;
+
+        return false;
+      });
 
       // Priority: ID match > Pending match > Data match
       let existingIndex = -1;
@@ -374,12 +457,18 @@ function App() {
       if (existingIndex !== -1) {
         const existing = updatedTransactions[existingIndex];
 
+        // Determine if this transaction should be marked as reconciled
+        // If it's from a statement import and within the statement date range, mark it reconciled
+        const shouldMarkReconciled = shouldReconcile &&
+                                      reconciliationDate &&
+                                      txWithAccount.date <= reconciliationDate;
+
         if (isPendingToPosted) {
           // Pending transaction has posted - update with new ID, date, status, and category
           // For USAA checking accounts, the category is often more accurate once the transaction clears
           updatedTransactions[existingIndex] = {
             ...txWithAccount, // Use all new data from CSV (including updated category)
-            isReconciled: existing.isReconciled, // Preserve reconciled status
+            isReconciled: shouldMarkReconciled || existing.isReconciled, // Mark as reconciled if from statement
             isPending: false, // Explicitly mark as not pending
           };
           postedCount++;
@@ -388,7 +477,7 @@ function App() {
           updatedTransactions[existingIndex] = {
             ...existing, // Keep existing data as base
             ...txWithAccount, // Override with new CSV data
-            isReconciled: existing.isReconciled, // Preserve reconciled status
+            isReconciled: shouldMarkReconciled || existing.isReconciled, // Mark as reconciled if from statement
             recurringBillId: txWithAccount.recurringBillId || existing.recurringBillId, // Use new bill link if found
             category: txWithAccount.recurringBillId ? txWithAccount.category : existing.category, // Use bill category if matched
           };
@@ -397,9 +486,12 @@ function App() {
           // If existing was manual (user created from projected or added manually), update it
           updatedTransactions[existingIndex] = {
             ...txWithAccount,
-            isReconciled: existing.isReconciled, // Preserve reconciled status
+            isReconciled: shouldMarkReconciled || existing.isReconciled, // Mark as reconciled if from statement
           };
           updatedCount++;
+        } else if (existing.isReconciled) {
+          // Already reconciled from statement - skip to avoid duplicates
+          skippedCount++;
         } else {
           // Already imported from CSV, skip duplicate
           skippedCount++;
@@ -448,8 +540,8 @@ function App() {
         .sort((a, b) => a.date.getTime() - b.date.getTime());
 
       if (accountTransactions.length > 0) {
-        // Calculate balances for all transactions
-        const balances = calculateBalances(accountTransactions, account.availableBalance || 0);
+        // Calculate balances for all transactions using reconciled balance if available
+        const balances = calculateBalances(accountTransactions, account.availableBalance || 0, account.reconciliationBalance);
         // Get the most recent balance
         if (balances.length > 0) {
           calculatedBalance = balances[balances.length - 1].balance;
@@ -504,14 +596,21 @@ function App() {
       // If this is a statement import with reconciliation data, set reconciliation point
       if (statementData?.closingDate && statementData?.endingBalance !== undefined) {
         updatedAccount.reconciliationDate = statementData.closingDate;
-        updatedAccount.reconciliationBalance = statementData.endingBalance;
+
+        // For credit cards, statement balance is debt owed (positive), but we store as negative
+        // For checking/savings, statement balance is already in correct sign
+        const balanceToStore = account.accountType === 'credit_card'
+          ? -Math.abs(statementData.endingBalance)
+          : statementData.endingBalance;
+
+        updatedAccount.reconciliationBalance = balanceToStore;
 
         // Create source string
         const monthYear = statementData.closingDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         updatedAccount.lastReconciliationSource = `${account.institution} Statement - ${monthYear}`;
 
         // Set available balance to statement balance
-        updatedAccount.availableBalance = statementData.endingBalance;
+        updatedAccount.availableBalance = balanceToStore;
       } else {
         // Priority: explicit currentBalance > accountSummary.newBalance > calculatedBalance
         if (currentBalance !== undefined) {
@@ -808,8 +907,10 @@ function App() {
     );
 
     // Sum up amounts
+    // For credit cards: positive transaction = charge (increases debt), so we subtract
+    // For checking: positive transaction = spent (decreases balance), so we subtract
     for (const tx of transactionsAfterReconciliation) {
-      balance += tx.amount;
+      balance -= tx.amount;
     }
 
     return Math.round(balance * 100) / 100;
@@ -863,16 +964,16 @@ function App() {
         };
       });
 
-    return calculateBalances([...accountTransactions, ...projections], effectiveBalance);
+    return calculateBalances([...accountTransactions, ...projections], effectiveBalance, account?.reconciliationBalance);
   }, [account, accountTransactions, accountRecurringBills, dismissedProjections, projectedState, projectedVisibility, transactions, calculateBalanceFromReconciliation]);
 
   // Transactions for display in register - filtered by showProjections checkbox
   const allTransactions = useMemo(() => {
     if (!showProjections) {
-      return calculateBalances(accountTransactions, effectiveAvailableBalance);
+      return calculateBalances(accountTransactions, effectiveAvailableBalance, account?.reconciliationBalance);
     }
     return allTransactionsWithProjections;
-  }, [showProjections, allTransactionsWithProjections, accountTransactions, effectiveAvailableBalance]);
+  }, [showProjections, allTransactionsWithProjections, accountTransactions, effectiveAvailableBalance, account]);
 
   // Calculate current balance (most recent non-projected transaction) - memoized
   const currentBalance = useMemo(() => {
@@ -1153,7 +1254,7 @@ function App() {
                     {account?.reconciliationDate && account?.reconciliationBalance !== undefined && (
                       <>
                         <span className="mx-1">|</span>
-                        📍 Reconciled: {account.reconciliationDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })} (${account.reconciliationBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        📍 Reconciled: {new Date(account.reconciliationDate).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })} (${Math.abs(account.reconciliationBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                       </>
                     )}
                   </p>

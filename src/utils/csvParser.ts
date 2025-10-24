@@ -194,13 +194,9 @@ const parseUSAARow = (row: CSVRow, index: number, dateCounts?: Map<string, numbe
   // Check if transaction is pending or posted
   // USAA typically uses "Pending" or "Posted" in the status column
   // If no status column, default to posted (not pending)
-  const isPending = status
-    ? status.toString().toLowerCase().includes('pending')
-    : false;
-
-  // Pending transactions should NOT be reconciled (not cleared)
-  // Posted transactions are cleared
-  const isReconciled = !isPending;
+  const statusLower = status ? status.toString().toLowerCase() : '';
+  const isPending = statusLower.includes('pending');
+  const isPosted = statusLower.includes('posted');
 
   // Generate stable ID with numeric suffix based on chronological order
   // CSV has newest first (row 0), so we reverse the numbering:
@@ -224,7 +220,7 @@ const parseUSAARow = (row: CSVRow, index: number, dateCounts?: Map<string, numbe
     amount,
     balance: 0, // Will be calculated by calculateBalances
     isPending,
-    isReconciled, // Posted = cleared, Pending = not cleared
+    isPosted,
     isManual: false,
     sortOrder: index, // Preserve CSV order
   };
@@ -475,7 +471,6 @@ const parseAppleCardRow = (row: CSVRow, index: number, dateCounts?: Map<string, 
     amount,
     balance: 0,
     isPending,
-    isReconciled: !isPending,
     isManual: false,
     sortOrder: index,
   };

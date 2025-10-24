@@ -8,6 +8,7 @@ export interface Transaction {
   amount: number; // Negative for debits, positive for credits
   balance: number;
   isPending: boolean;
+  isPosted?: boolean; // True if transaction is posted (from CSV Status field)
   isManual: boolean; // True if manually entered vs imported
   isReconciled?: boolean; // True if transaction has been reconciled
   sortOrder?: number; // Preserves original CSV order
