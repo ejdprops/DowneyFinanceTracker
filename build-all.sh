@@ -14,7 +14,7 @@ mkdir -p dist-all
 # Build main version (Family)
 echo ""
 echo "Building main version..."
-VITE_BASE_PATH="/DowneyFinanceTracker/" VITE_APP_OWNER="Family" npm run build
+VITE_APP_OWNER="Family" npm run build
 mv dist dist-all/main
 
 # Build Ethan's version

@@ -11,7 +11,14 @@
       "Bash(git config:*)",
       "Bash(npm run deploy:*)",
       "Bash(git commit:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npm run deploy:all:*)",
+      "Bash(bash:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(VITE_BASE_PATH=\"/DowneyFinanceTracker/\" npm run build)",
+      "Bash(VITE_APP_OWNER=\"Family\" npm run build:*)"
     ],
     "deny": [],
     "ask": []

@@ -32,7 +32,7 @@ cp -r dist-all/kendra/* dist/kendra/
 # Deploy to GitHub Pages
 echo ""
 echo "Deploying to GitHub Pages..."
-npx gh-pages -d dist
+npx gh-pages -d dist --nojekyll
 
 echo ""
 echo "Deployment complete!"
