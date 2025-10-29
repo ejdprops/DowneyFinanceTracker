@@ -14,6 +14,7 @@ import { MobileHamburgerMenu } from './components/MobileHamburgerMenu';
 import { MobileAccountHeader } from './components/MobileAccountHeader';
 import { MobileProjectionBar } from './components/MobileProjectionBar';
 import { MobileTabNav } from './components/MobileTabNav';
+import { MobileSummary } from './components/MobileSummary';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
@@ -42,7 +43,7 @@ declare const __APP_OWNER__: string;
 // Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
 const APP_OWNER = __APP_OWNER__;
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 
 type TabType = 'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync';
 
@@ -58,6 +59,7 @@ function AppMobile() {
   const [projectedVisibility, setProjectedVisibility] = useState<Map<string, boolean>>(new Map());
   const [projectedState, setProjectedState] = useState<Map<string, Partial<Transaction>>>(new Map());
   const [showAccountManagement, setShowAccountManagement] = useState(false);
+  const [showSummary, setShowSummary] = useState(true); // Default to showing summary on mobile
   const [pendingBillUpdates, setPendingBillUpdates] = useState<Array<{
     billId: string;
     bill: RecurringBill;
@@ -638,30 +640,42 @@ function AppMobile() {
       <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-2 pb-2">
         <div className="px-3">
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-3 border border-gray-700">
-            {/* Top Bar: Logo and Hamburger Menu */}
-            <div className="flex items-center justify-between mb-3">
-              <img
-                src={logo}
-                alt={`${APP_OWNER}'s Finance Tracker`}
-                className="h-[72px] w-auto object-contain"
-                title={`${APP_OWNER}'s Finance Tracker`}
-              />
+            {/* Top Bar: Hamburger Menu, Logo, and Title */}
+            <div className="flex items-center gap-3 mb-3">
               <MobileHamburgerMenu
                 accounts={accounts}
                 activeAccountId={activeAccountId}
                 transactions={transactions}
                 onSelectAccount={handleSelectAccount}
                 onManageAccounts={() => setShowAccountManagement(true)}
+                onShowSummary={() => setShowSummary(true)}
               />
+              <button
+                onClick={() => setShowSummary(true)}
+                className="flex-1 flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity"
+              >
+                <img
+                  src={logo}
+                  alt={`${APP_OWNER}'s Finance Tracker`}
+                  className="h-[58px] w-auto object-contain"
+                  title={`${APP_OWNER}'s Finance Tracker`}
+                />
+                <h1 className="text-lg font-semibold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 tracking-wide">
+                  Downey Finance Tracker
+                </h1>
+              </button>
+              <div className="w-10"></div>
             </div>
 
-            {/* Account Info Header */}
-            <div className="mb-3">
-              <MobileAccountHeader account={account} currentBalance={currentBalance} />
-            </div>
+            {/* Account Info Header - hide when showing summary */}
+            {!showSummary && (
+              <div className="mb-3">
+                <MobileAccountHeader account={account} currentBalance={currentBalance} />
+              </div>
+            )}
 
-            {/* Projection Bar */}
-            {account && (
+            {/* Projection Bar - hide when showing summary */}
+            {!showSummary && account && (
               <div className="mb-3">
                 <MobileProjectionBar
                   allTransactionsWithProjections={allTransactionsWithProjections}
@@ -670,8 +684,10 @@ function AppMobile() {
               </div>
             )}
 
-            {/* Tab Navigation */}
-            <MobileTabNav currentTab={currentTab} onTabChange={setCurrentTab} />
+            {/* Tab Navigation - hide when showing summary */}
+            {!showSummary && (
+              <MobileTabNav currentTab={currentTab} onTabChange={setCurrentTab} />
+            )}
 
             {/* Quick Actions Row */}
             <div className="mt-3 flex gap-2 overflow-x-auto scrollbar-hide">
@@ -778,8 +794,34 @@ function AppMobile() {
       {/* Tab Content */}
       <div className="px-3 pb-5">
         <div className="bg-gray-800 rounded-2xl shadow-xl p-4 border border-gray-700">
+          {/* Summary View */}
+          {showSummary && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-white">Account Summary</h2>
+                <button
+                  onClick={() => setShowSummary(false)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                  aria-label="Close summary"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <MobileSummary
+                accounts={accounts}
+                transactions={transactions}
+                onSelectAccount={(accountId) => {
+                  handleSelectAccount(accountId);
+                  setShowSummary(false);
+                }}
+              />
+            </div>
+          )}
+
           {/* Account Details Tab */}
-          {currentTab === 'account' && (
+          {!showSummary && currentTab === 'account' && (
             <div className="space-y-4">
               <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
                 <dl className="grid grid-cols-1 gap-4">
@@ -812,7 +854,7 @@ function AppMobile() {
           )}
 
           {/* Register Tab */}
-          {currentTab === 'register' && (
+          {!showSummary && currentTab === 'register' && (
             <TransactionRegister
               transactions={allTransactions}
               onAddTransaction={handleAddTransaction}
@@ -828,7 +870,7 @@ function AppMobile() {
           )}
 
           {/* Recurring Bills Tab */}
-          {currentTab === 'recurring' && (
+          {!showSummary && currentTab === 'recurring' && (
             <div className="space-y-6">
               <RecurringSuggestions
                 transactions={accountTransactions}
@@ -845,7 +887,7 @@ function AppMobile() {
           )}
 
           {/* Projections Tab */}
-          {currentTab === 'projections' && (
+          {!showSummary && currentTab === 'projections' && (
             <Projections
               transactions={allTransactionsWithProjections}
               currentBalance={account?.availableBalance || 0}
@@ -853,7 +895,7 @@ function AppMobile() {
           )}
 
           {/* Spending Charts Tab */}
-          {currentTab === 'charts' && (
+          {!showSummary && currentTab === 'charts' && (
             <SpendingCharts
               transactions={transactions}
               accounts={accounts}
@@ -862,14 +904,14 @@ function AppMobile() {
           )}
 
           {/* Merchants Tab */}
-          {currentTab === 'merchants' && (
+          {!showSummary && currentTab === 'merchants' && (
             <MerchantManagement
               transactions={accountTransactions}
             />
           )}
 
           {/* Debts Tab */}
-          {currentTab === 'debts' && (
+          {!showSummary && currentTab === 'debts' && (
             <DebtsTracker
               debts={debts}
               onAddDebt={handleAddDebt}
@@ -879,7 +921,7 @@ function AppMobile() {
           )}
 
           {/* iCloud Sync Tab */}
-          {currentTab === 'sync' && (
+          {!showSummary && currentTab === 'sync' && (
             <ICloudSync
               transactions={transactions}
               accounts={accounts}
