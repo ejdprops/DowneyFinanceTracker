@@ -49,8 +49,8 @@ export function MobileSummary({
 
     const currentBalance = getAccountBalance(account.id);
     // For credit cards, balance is what you owe (positive = debt)
-    // Available credit = credit limit - balance owed
-    return account.creditLimit - currentBalance;
+    // Available credit = credit limit - balance owed (use absolute value in case of credits)
+    return account.creditLimit - Math.abs(currentBalance);
   };
 
   // Calculate projected balances for an account
@@ -124,13 +124,13 @@ export function MobileSummary({
           <p className="text-sm text-blue-100">Credit Cards Owed</p>
         </div>
         <div className="flex justify-between items-center">
-          <p className={`text-2xl font-bold ${checkingSavingsBalance >= 0 ? 'text-white' : 'text-red-300'}`}>
+          <p className={`text-2xl font-bold ${checkingSavingsBalance >= 0 ? 'text-green-300' : 'text-red-300'}`}>
             ${checkingSavingsBalance.toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
             })}
           </p>
-          <p className={`text-2xl font-bold ${creditCardDebt > 0 ? 'text-red-300' : 'text-white'}`}>
+          <p className={`text-2xl font-bold ${creditCardDebt > 0 ? 'text-red-300' : 'text-green-300'}`}>
             ${creditCardDebt.toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
@@ -302,6 +302,8 @@ export function MobileSummary({
               const balance = getAccountBalance(account.id);
               const availableCredit = getAvailableCredit(account);
               // Display balance owed as negative (red) since it's debt
+              // Positive balance = you owe money (display as negative red)
+              // Negative balance = you have a credit (display as positive green)
               const displayBalance = -balance;
 
               return (
@@ -316,8 +318,8 @@ export function MobileSummary({
                       <p className="text-xs text-gray-400">{account.institution}</p>
                     </div>
                     <div className="text-right">
-                      <p className={`text-lg font-semibold ${displayBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
-                        ${displayBalance.toLocaleString(undefined, {
+                      <p className={`text-lg font-semibold ${displayBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {displayBalance < 0 ? '-' : ''}${Math.abs(displayBalance).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2
                         })}
