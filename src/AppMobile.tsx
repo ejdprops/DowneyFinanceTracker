@@ -145,10 +145,6 @@ function AppMobile() {
   );
 
   // Account management handlers - memoized with useCallback
-  const handleSelectAccount = useCallback((accountId: string) => {
-    setActiveAccountId(accountId);
-  }, []);
-
   const handleAddAccount = useCallback((accountData: Omit<Account, 'id'>) => {
     const newAccount: Account = {
       ...accountData,
@@ -646,7 +642,10 @@ function AppMobile() {
                 accounts={accounts}
                 activeAccountId={activeAccountId}
                 transactions={transactions}
-                onSelectAccount={handleSelectAccount}
+                onSelectAccount={(accountId) => {
+                  setActiveAccountId(accountId);
+                  setShowSummary(false);
+                }}
                 onManageAccounts={() => setShowAccountManagement(true)}
                 onShowSummary={() => setShowSummary(true)}
               />
@@ -812,6 +811,7 @@ function AppMobile() {
               <MobileSummary
                 accounts={accounts}
                 transactions={transactions}
+                recurringBills={recurringBills}
                 onSelectAccount={(accountId) => {
                   setActiveAccountId(accountId);
                   setShowSummary(false);

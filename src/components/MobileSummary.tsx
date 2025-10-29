@@ -1,15 +1,17 @@
-import type { Account, Transaction } from '../types';
-import { calculateBalances } from '../utils/projections';
+import type { Account, Transaction, RecurringBill } from '../types';
+import { calculateBalances, generateProjections } from '../utils/projections';
 
 interface MobileSummaryProps {
   accounts: Account[];
   transactions: Transaction[];
+  recurringBills: RecurringBill[];
   onSelectAccount: (accountId: string) => void;
 }
 
 export function MobileSummary({
   accounts,
   transactions,
+  recurringBills,
   onSelectAccount,
 }: MobileSummaryProps) {
   // Calculate current balance for each account
@@ -49,6 +51,53 @@ export function MobileSummary({
     // For credit cards, balance is what you owe (positive = debt)
     // Available credit = credit limit - balance owed
     return account.creditLimit - currentBalance;
+  };
+
+  // Calculate projected balances for an account
+  const getProjectedBalances = (accountId: string) => {
+    const account = accounts.find(a => a.id === accountId);
+    if (!account) {
+      return { endOfMonth: 0, nextMonth: 0, twoMonthsOut: 0 };
+    }
+
+    const accountTransactions = transactions.filter(t => t.accountId === accountId);
+    const accountRecurringBills = recurringBills.filter(b => b.accountId === accountId);
+
+    // Generate projections for 3 months
+    const today = new Date();
+    const endOfTwoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+    const daysAhead = Math.ceil((endOfTwoMonthsOut.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    const projections = generateProjections(accountRecurringBills, daysAhead);
+    const allTransactions = [...accountTransactions, ...projections].sort((a, b) => a.date.getTime() - b.date.getTime());
+    const transactionsWithBalances = calculateBalances(allTransactions, account.availableBalance || 0, account.reconciliationBalance);
+
+    // Calculate end of month balance
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    const endOfMonthTransactions = transactionsWithBalances.filter(t => t.date <= endOfMonth);
+    const endOfMonthBalance = endOfMonthTransactions.length > 0
+      ? endOfMonthTransactions[endOfMonthTransactions.length - 1].balance
+      : account.availableBalance || 0;
+
+    // Calculate next month balance
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0, 23, 59, 59, 999);
+    const nextMonthTransactions = transactionsWithBalances.filter(t => t.date <= nextMonth);
+    const nextMonthBalance = nextMonthTransactions.length > 0
+      ? nextMonthTransactions[nextMonthTransactions.length - 1].balance
+      : account.availableBalance || 0;
+
+    // Calculate two months out balance
+    const twoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+    const twoMonthsOutTransactions = transactionsWithBalances.filter(t => t.date <= twoMonthsOut);
+    const twoMonthsOutBalance = twoMonthsOutTransactions.length > 0
+      ? twoMonthsOutTransactions[twoMonthsOutTransactions.length - 1].balance
+      : account.availableBalance || 0;
+
+    return {
+      endOfMonth: endOfMonthBalance,
+      nextMonth: nextMonthBalance,
+      twoMonthsOut: twoMonthsOutBalance,
+    };
   };
 
   // Calculate total checking/savings balance
@@ -97,13 +146,18 @@ export function MobileSummary({
           <div className="space-y-2">
             {checkingAccounts.map(account => {
               const balance = getAccountBalance(account.id);
+              const projections = getProjectedBalances(account.id);
+              const today = new Date();
+              const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+              const twoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+
               return (
                 <button
                   key={account.id}
                   onClick={() => onSelectAccount(account.id)}
                   className="w-full bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-blue-500 transition-all text-left"
                 >
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center mb-3">
                     <div className="flex-1">
                       <p className="text-white font-medium">{account.name}</p>
                       <p className="text-xs text-gray-400">{account.institution}</p>
@@ -116,6 +170,43 @@ export function MobileSummary({
                         })}
                       </p>
                       <p className="text-xs text-gray-400">Available</p>
+                    </div>
+                  </div>
+
+                  {/* Projection Balances */}
+                  <div className="pt-3 border-t border-gray-700">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">End of Month</p>
+                        <p className={`text-xs font-semibold ${projections.endOfMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.endOfMonth.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                          {nextMonth.toLocaleDateString('en-US', { month: 'short' })}
+                        </p>
+                        <p className={`text-xs font-semibold ${projections.nextMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.nextMonth.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                          {twoMonthsOut.toLocaleDateString('en-US', { month: 'short' })}
+                        </p>
+                        <p className={`text-xs font-semibold ${projections.twoMonthsOut >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.twoMonthsOut.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -132,13 +223,18 @@ export function MobileSummary({
           <div className="space-y-2">
             {savingsAccounts.map(account => {
               const balance = getAccountBalance(account.id);
+              const projections = getProjectedBalances(account.id);
+              const today = new Date();
+              const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+              const twoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 2, 1);
+
               return (
                 <button
                   key={account.id}
                   onClick={() => onSelectAccount(account.id)}
                   className="w-full bg-gray-800 rounded-xl p-4 border border-gray-700 hover:border-blue-500 transition-all text-left"
                 >
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between items-center mb-3">
                     <div className="flex-1">
                       <p className="text-white font-medium">{account.name}</p>
                       <p className="text-xs text-gray-400">{account.institution}</p>
@@ -151,6 +247,43 @@ export function MobileSummary({
                         })}
                       </p>
                       <p className="text-xs text-gray-400">Balance</p>
+                    </div>
+                  </div>
+
+                  {/* Projection Balances */}
+                  <div className="pt-3 border-t border-gray-700">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">End of Month</p>
+                        <p className={`text-xs font-semibold ${projections.endOfMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.endOfMonth.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                          {nextMonth.toLocaleDateString('en-US', { month: 'short' })}
+                        </p>
+                        <p className={`text-xs font-semibold ${projections.nextMonth >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.nextMonth.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                          {twoMonthsOut.toLocaleDateString('en-US', { month: 'short' })}
+                        </p>
+                        <p className={`text-xs font-semibold ${projections.twoMonthsOut >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          ${projections.twoMonthsOut.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                          })}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </button>
