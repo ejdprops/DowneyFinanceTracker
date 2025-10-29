@@ -813,7 +813,7 @@ function AppMobile() {
                 accounts={accounts}
                 transactions={transactions}
                 onSelectAccount={(accountId) => {
-                  handleSelectAccount(accountId);
+                  setActiveAccountId(accountId);
                   setShowSummary(false);
                 }}
               />
