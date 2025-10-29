@@ -9,6 +9,7 @@ interface MobileHamburgerMenuProps {
   transactions: Transaction[];
   onSelectAccount: (accountId: string) => void;
   onManageAccounts: () => void;
+  onShowSummary: () => void;
 }
 
 export function MobileHamburgerMenu({
@@ -17,6 +18,7 @@ export function MobileHamburgerMenu({
   transactions,
   onSelectAccount,
   onManageAccounts,
+  onShowSummary,
 }: MobileHamburgerMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,7 +81,7 @@ export function MobileHamburgerMenu({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-50 max-h-[80vh] overflow-y-auto">
+        <div className="absolute left-0 top-full mt-2 w-72 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-50 max-h-[80vh] overflow-y-auto">
           <div className="p-3 border-b border-gray-700">
             <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
               Select Account
@@ -87,6 +89,19 @@ export function MobileHamburgerMenu({
           </div>
 
           <div className="py-2">
+            {/* Summary Option */}
+            <button
+              onClick={() => {
+                onShowSummary();
+                setIsOpen(false);
+              }}
+              className="w-full px-3 py-3 hover:bg-gray-700/50 transition-all flex items-center gap-2 border-b border-gray-700"
+            >
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span className="text-sm font-medium text-white">Account Summary</span>
+            </button>
             {/* Checking/Savings Accounts */}
             {accounts.filter(acc => acc.accountType !== 'credit_card').length > 0 && (
               <div className="mb-2">

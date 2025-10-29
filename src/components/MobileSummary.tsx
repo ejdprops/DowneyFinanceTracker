@@ -15,13 +15,28 @@ export function MobileSummary({
   // Calculate current balance for each account
   const getAccountBalance = (accountId: string): number => {
     const account = accounts.find(a => a.id === accountId);
+    if (!account) return 0;
+
     const accountTransactions = transactions.filter(t => t.accountId === accountId);
 
-    const accBalance = accountTransactions.length > 0
-      ? calculateBalances(accountTransactions, account?.availableBalance || 0)[accountTransactions.length - 1]?.balance
-      : account?.availableBalance || 0;
+    if (accountTransactions.length === 0) {
+      return account.availableBalance || 0;
+    }
 
-    return accBalance;
+    // Use calculateBalances with reconciliation balance if available
+    const calculatedTransactions = calculateBalances(
+      accountTransactions,
+      account.availableBalance || 0,
+      account.reconciliationBalance
+    );
+
+    // Get the most recent non-projected transaction's balance
+    const actualTransactions = calculatedTransactions.filter(t => !t.description.includes('(Projected)'));
+    if (actualTransactions.length > 0) {
+      return actualTransactions[actualTransactions.length - 1].balance;
+    }
+
+    return account.availableBalance || 0;
   };
 
   // Calculate available credit for credit cards
