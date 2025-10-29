@@ -1,8 +1,19 @@
-import { useState, useEffect } from 'react';
-import { CSVImport } from './components/CSVImport';
-import { JSONImport } from './components/JSONImport';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { TransactionRegister } from './components/TransactionRegister';
+import { RecurringBillsManager } from './components/RecurringBillsManager';
+import { RecurringSuggestions } from './components/RecurringSuggestions';
+import { Projections } from './components/Projections';
+import { DebtsTracker } from './components/DebtsTracker';
 import { ICloudSync } from './components/ICloudSync';
 import { AccountManagement } from './components/AccountManagement';
+import { SpendingCharts } from './components/SpendingCharts';
+import { MerchantManagement } from './components/MerchantManagement';
+import RecurringBillUpdatePrompt from './components/RecurringBillUpdatePrompt';
+import { AppleCardInstallments } from './components/AppleCardInstallments';
+import { MobileHamburgerMenu } from './components/MobileHamburgerMenu';
+import { MobileAccountHeader } from './components/MobileAccountHeader';
+import { MobileProjectionBar } from './components/MobileProjectionBar';
+import { MobileTabNav } from './components/MobileTabNav';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
@@ -15,29 +26,50 @@ import {
   saveDebts,
   loadDebts,
   migrateToMultiAccount,
+  saveDismissedProjections,
+  loadDismissedProjections,
   saveICloudFolderPath,
   loadICloudFolderPath,
 } from './utils/storage';
-import { generateProjections, calculateBalances } from './utils/projections';
+import { generateProjections, calculateBalances, getNextOccurrence } from './utils/projections';
+import { parseCSV } from './utils/csvParser';
 import logo from './assets/downey-app-logo-header.png';
 
-// Declare global constants
+// Declare global build timestamp and app owner injected by Vite
+declare const __BUILD_DATE__: string;
 declare const __APP_OWNER__: string;
 
-const APP_OWNER = typeof __APP_OWNER__ !== 'undefined' ? __APP_OWNER__ : 'Family';
+// Build timestamp and app owner - injected at build time
+const BUILD_DATE = __BUILD_DATE__;
+const APP_OWNER = __APP_OWNER__;
+const VERSION = '1.9.0';
+
+type TabType = 'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync';
 
 function AppMobile() {
-  const [currentTab, setCurrentTab] = useState<'balance' | 'transactions' | 'sync'>('balance');
+  const [currentTab, setCurrentTab] = useState<TabType>('account');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeAccountId, setActiveAccountId] = useState<string>('');
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [showProjections, setShowProjections] = useState(false);
+  const [dismissedProjections, setDismissedProjections] = useState<Set<string>>(new Set());
+  const [projectedVisibility, setProjectedVisibility] = useState<Map<string, boolean>>(new Map());
+  const [projectedState, setProjectedState] = useState<Map<string, Partial<Transaction>>>(new Map());
   const [showAccountManagement, setShowAccountManagement] = useState(false);
+  const [pendingBillUpdates, setPendingBillUpdates] = useState<Array<{
+    billId: string;
+    bill: RecurringBill;
+    importedAmount: number;
+    importedDate: Date;
+    proposedNextDueDate: Date;
+  }>>([]);
   const [iCloudDirHandle, setICloudDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
-  // @ts-expect-error - iCloudFolderPath stored but not displayed on mobile
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null);
+  const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null); // Used for storage, may not be displayed
+
+  // Suppress unused variable warning - iCloudFolderPath is intentionally stored for persistence
+  void iCloudFolderPath;
 
   // Load data on mount
   useEffect(() => {
@@ -46,6 +78,7 @@ function AppMobile() {
     const savedActiveAccountId = loadActiveAccountId();
     const loadedBills = loadRecurringBills();
     const loadedDebts = loadDebts();
+    const loadedDismissedProjections = loadDismissedProjections();
     const savedFolderPath = loadICloudFolderPath();
 
     setTransactions(loadedTransactions);
@@ -53,6 +86,7 @@ function AppMobile() {
     setActiveAccountId(savedActiveAccountId || migratedAccounts[0]?.id || '');
     setRecurringBills(loadedBills);
     setDebts(loadedDebts);
+    setDismissedProjections(loadedDismissedProjections);
     setICloudFolderPath(savedFolderPath);
   }, []);
 
@@ -87,32 +121,61 @@ function AppMobile() {
     }
   }, [debts]);
 
-  // Get active account
-  const account = accounts.find(a => a.id === activeAccountId) || null;
+  useEffect(() => {
+    saveDismissedProjections(dismissedProjections);
+  }, [dismissedProjections]);
 
-  // Filter transactions for active account
-  const accountTransactions = transactions.filter(t => t.accountId === activeAccountId);
-  const accountRecurringBills = recurringBills.filter(b => b.accountId === activeAccountId);
-
-  // Calculate balances
-  const allTransactions = calculateBalances(
-    [...accountTransactions, ...generateProjections(accountRecurringBills, 60)],
-    account?.availableBalance || 0
+  // Get active account - memoized
+  const account = useMemo(
+    () => accounts.find(a => a.id === activeAccountId) || null,
+    [accounts, activeAccountId]
   );
 
-  const currentBalance = account?.availableBalance || 0;
-  const futureTransactions = allTransactions.filter(t =>
-    t.date > new Date() && t.description.includes('(Projected)')
+  // Filter transactions and bills for active account - memoized
+  const accountTransactions = useMemo(
+    () => transactions.filter(t => t.accountId === activeAccountId),
+    [transactions, activeAccountId]
   );
-  const projectedBalance = futureTransactions.length > 0
-    ? futureTransactions[futureTransactions.length - 1].balance
-    : currentBalance;
 
-  const handleSelectAccount = (accountId: string) => {
+  const accountRecurringBills = useMemo(
+    () => recurringBills.filter(b => b.accountId === activeAccountId),
+    [recurringBills, activeAccountId]
+  );
+
+  // Account management handlers - memoized with useCallback
+  const handleSelectAccount = useCallback((accountId: string) => {
     setActiveAccountId(accountId);
+  }, []);
+
+  const handleAddAccount = useCallback((accountData: Omit<Account, 'id'>) => {
+    const newAccount: Account = {
+      ...accountData,
+      id: `account-${Date.now()}`,
+    };
+    setAccounts(prev => [...prev, newAccount]);
+  }, []);
+
+  const handleUpdateAccount = useCallback((updatedAccount: Account) => {
+    setAccounts(prev => prev.map(a => a.id === updatedAccount.id ? updatedAccount : a));
+  }, []);
+
+  const handleDeleteAccount = (accountId: string) => {
+    setTransactions(transactions.filter(t => t.accountId !== accountId));
+    setRecurringBills(recurringBills.filter(b => b.accountId !== accountId));
+    const newAccounts = accounts.filter(a => a.id !== accountId);
+    setAccounts(newAccounts);
+    if (activeAccountId === accountId && newAccounts.length > 0) {
+      setActiveAccountId(newAccounts[0].id);
+    }
   };
 
-  const handleImportComplete = (data: ParsedCSVData, currentBalance?: number) => {
+  // Import handler (simplified from desktop version)
+  const handleImportComplete = (
+    data: ParsedCSVData,
+    currentBalance?: number,
+    accountSummary?: { newBalance?: number; minimumPayment?: number; paymentDueDate?: string },
+    statementData?: { closingDate?: Date; endingBalance?: number; statementPeriod?: string }
+  ) => {
     if (!activeAccountId) return;
 
     let newCount = 0;
@@ -120,66 +183,238 @@ function AppMobile() {
     let skippedCount = 0;
     let postedCount = 0;
 
+    const originalTransactions = [...transactions];
     const updatedTransactions = [...transactions];
+    const billsToUpdate = new Set<string>();
+    const billUpdateData = new Map<string, { amount: number; date: Date }>();
+
+    const shouldReconcile = statementData?.closingDate !== undefined;
+    const reconciliationDate = statementData?.closingDate;
 
     data.transactions.forEach(importedTx => {
-      const txWithAccount = { ...importedTx, accountId: activeAccountId };
+      let txWithAccount = { ...importedTx, accountId: activeAccountId };
 
-      const existingByIdIndex = updatedTransactions.findIndex(t => t.id === txWithAccount.id);
-      const existingPendingIndex = updatedTransactions.findIndex(t =>
-        t.accountId === activeAccountId &&
-        t.isPending &&
-        t.description === txWithAccount.description &&
-        Math.abs(t.amount - txWithAccount.amount) < 0.01
+      if (shouldReconcile && reconciliationDate && importedTx.date <= reconciliationDate) {
+        txWithAccount.isReconciled = true;
+      }
+
+      // Match with recurring bills
+      const matchingBill = recurringBills.find(bill => {
+        if (bill.accountId !== activeAccountId || !bill.isActive) return false;
+        const amountType = bill.amountType || 'fixed';
+        if (amountType === 'fixed') {
+          if (Math.abs(bill.amount - txWithAccount.amount) >= 0.01) return false;
+        } else {
+          const tolerance = bill.amountTolerance || 10;
+          const maxDiff = Math.abs(bill.amount) * (tolerance / 100);
+          if (Math.abs(bill.amount - txWithAccount.amount) > maxDiff) return false;
+        }
+        const billDesc = bill.description.toLowerCase().trim();
+        const txDesc = txWithAccount.description.toLowerCase().trim();
+        if (billDesc === txDesc || billDesc.includes(txDesc) || txDesc.includes(billDesc)) return true;
+        return false;
+      });
+
+      if (matchingBill) {
+        txWithAccount = {
+          ...txWithAccount,
+          recurringBillId: matchingBill.id,
+          category: matchingBill.category,
+        };
+
+        const currentDueDate = typeof matchingBill.nextDueDate === 'string'
+          ? new Date(matchingBill.nextDueDate + 'T00:00:00')
+          : new Date(matchingBill.nextDueDate);
+
+        const proposedNextDueDate = getNextOccurrence(
+          currentDueDate,
+          matchingBill.frequency,
+          matchingBill.dayOfMonth,
+          matchingBill.dayOfWeek,
+          matchingBill.weekOfMonth
+        );
+
+        const hasProjectedTransaction = updatedTransactions.some(t => {
+          if (!t.description.includes('(Projected)')) return false;
+          if (t.recurringBillId !== matchingBill.id) return false;
+          return t.date > txWithAccount.date &&
+                 Math.abs(t.date.getTime() - proposedNextDueDate.getTime()) <= 7 * 24 * 60 * 60 * 1000;
+        });
+
+        if (!hasProjectedTransaction) {
+          billsToUpdate.add(matchingBill.id);
+          const existingData = billUpdateData.get(matchingBill.id);
+          if (!existingData || txWithAccount.date > existingData.date) {
+            billUpdateData.set(matchingBill.id, {
+              amount: txWithAccount.amount,
+              date: txWithAccount.date
+            });
+          }
+        }
+      }
+
+      // Check for duplicates
+      const existingByIdIndex = originalTransactions.findIndex(t =>
+        t.id === txWithAccount.id && t.accountId === activeAccountId
       );
-      const existingByDataIndex = updatedTransactions.findIndex(t =>
-        t.accountId === activeAccountId &&
-        !t.isPending &&
-        t.date.toDateString() === txWithAccount.date.toDateString() &&
-        t.description === txWithAccount.description &&
-        Math.abs(t.amount - txWithAccount.amount) < 0.01
-      );
+
+      const existingPendingIndex = originalTransactions.findIndex(t => {
+        if (t.accountId !== activeAccountId || !t.isPending) return false;
+        if (Math.abs(t.amount - txWithAccount.amount) >= 0.01) return false;
+        const existingDesc = t.description.toLowerCase().trim();
+        const newDesc = txWithAccount.description.toLowerCase().trim();
+        return existingDesc === newDesc || existingDesc.includes(newDesc) || newDesc.includes(existingDesc);
+      });
+
+      const existingByDataIndex = originalTransactions.findIndex(t => {
+        if (t.accountId !== activeAccountId || t.isPending) return false;
+        if (t.date.toDateString() !== txWithAccount.date.toDateString()) return false;
+        if (Math.abs(t.amount - txWithAccount.amount) >= 0.01) return false;
+        const existingDesc = t.description.toLowerCase().trim();
+        const newDesc = txWithAccount.description.toLowerCase().trim();
+        return existingDesc === newDesc || existingDesc.includes(newDesc) || newDesc.includes(existingDesc);
+      });
 
       let existingIndex = -1;
       let isPendingToPosted = false;
+      let isPendingDuplicate = false;
 
       if (existingByIdIndex !== -1) {
         existingIndex = existingByIdIndex;
-      } else if (existingPendingIndex !== -1 && !txWithAccount.isPending) {
+      } else if (existingPendingIndex !== -1) {
         existingIndex = existingPendingIndex;
-        isPendingToPosted = true;
+        if (!txWithAccount.isPending) {
+          isPendingToPosted = true;
+        } else {
+          isPendingDuplicate = true;
+        }
       } else if (existingByDataIndex !== -1) {
         existingIndex = existingByDataIndex;
       }
 
       if (existingIndex !== -1) {
         const existing = updatedTransactions[existingIndex];
+        const shouldMarkReconciled = shouldReconcile && reconciliationDate && txWithAccount.date <= reconciliationDate;
 
         if (isPendingToPosted) {
           updatedTransactions[existingIndex] = {
             ...txWithAccount,
-            isReconciled: existing.isReconciled,
+            isReconciled: shouldMarkReconciled || existing.isReconciled,
+            isPending: false,
           };
           postedCount++;
+        } else if (isPendingDuplicate) {
+          updatedTransactions[existingIndex] = {
+            ...existing,
+            ...txWithAccount,
+            isReconciled: shouldMarkReconciled || existing.isReconciled,
+            recurringBillId: txWithAccount.recurringBillId || existing.recurringBillId,
+            category: txWithAccount.recurringBillId ? txWithAccount.category : existing.category,
+          };
+          updatedCount++;
         } else if (existing.isManual) {
           updatedTransactions[existingIndex] = {
             ...txWithAccount,
-            isReconciled: existing.isReconciled,
+            isReconciled: shouldMarkReconciled || existing.isReconciled,
           };
           updatedCount++;
+        } else if (existing.isReconciled) {
+          skippedCount++;
         } else {
           skippedCount++;
         }
       } else {
-        updatedTransactions.push(txWithAccount);
-        newCount++;
+        if (txWithAccount.recurringBillId) {
+          const projectedIndex = updatedTransactions.findIndex(t => {
+            if (!t.description.includes('(Projected)')) return false;
+            if (t.recurringBillId !== txWithAccount.recurringBillId) return false;
+            const daysDiff = Math.abs((t.date.getTime() - txWithAccount.date.getTime()) / (1000 * 60 * 60 * 24));
+            return daysDiff <= 7;
+          });
+
+          if (projectedIndex !== -1) {
+            updatedTransactions[projectedIndex] = txWithAccount;
+            newCount++;
+          } else {
+            updatedTransactions.push(txWithAccount);
+            newCount++;
+          }
+        } else {
+          updatedTransactions.push(txWithAccount);
+          newCount++;
+        }
       }
     });
 
     setTransactions(updatedTransactions);
 
-    if (currentBalance !== undefined && account) {
-      const updatedAccount = { ...account, availableBalance: currentBalance };
+    // Prepare recurring bill updates
+    if (billsToUpdate.size > 0) {
+      const updates = Array.from(billsToUpdate).map(billId => {
+        const bill = recurringBills.find(b => b.id === billId);
+        const importedData = billUpdateData.get(billId);
+        if (!bill || !importedData) return null;
+
+        const currentDueDate = typeof bill.nextDueDate === 'string'
+          ? new Date(bill.nextDueDate + 'T00:00:00')
+          : new Date(bill.nextDueDate);
+
+        const proposedNextDueDate = getNextOccurrence(
+          currentDueDate,
+          bill.frequency,
+          bill.dayOfMonth,
+          bill.dayOfWeek,
+          bill.weekOfMonth
+        );
+
+        return {
+          billId,
+          bill,
+          importedAmount: importedData.amount,
+          importedDate: importedData.date,
+          proposedNextDueDate
+        };
+      }).filter(u => u !== null) as Array<{
+        billId: string;
+        bill: RecurringBill;
+        importedAmount: number;
+        importedDate: Date;
+        proposedNextDueDate: Date;
+      }>;
+
+      setPendingBillUpdates(updates);
+    }
+
+    // Update account balance
+    if (account && (currentBalance !== undefined || accountSummary || statementData)) {
+      const updatedAccount = { ...account };
+
+      if (statementData?.closingDate && statementData?.endingBalance !== undefined) {
+        updatedAccount.reconciliationDate = statementData.closingDate;
+        const balanceToStore = account.accountType === 'credit_card'
+          ? -Math.abs(statementData.endingBalance)
+          : statementData.endingBalance;
+        updatedAccount.reconciliationBalance = balanceToStore;
+        const monthYear = statementData.closingDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        updatedAccount.lastReconciliationSource = `${account.institution} Statement - ${monthYear}`;
+        updatedAccount.availableBalance = balanceToStore;
+      } else {
+        if (currentBalance !== undefined) {
+          updatedAccount.availableBalance = currentBalance;
+        } else if (accountSummary?.newBalance !== undefined) {
+          updatedAccount.availableBalance = accountSummary.newBalance;
+        }
+      }
+
+      if (accountSummary) {
+        if (accountSummary.minimumPayment !== undefined) {
+          updatedAccount.minimumPayment = accountSummary.minimumPayment;
+        }
+        if (accountSummary.paymentDueDate) {
+          updatedAccount.paymentDueDate = new Date(accountSummary.paymentDueDate);
+        }
+      }
+
       handleUpdateAccount(updatedAccount);
     }
 
@@ -187,24 +422,110 @@ function AppMobile() {
       alert(`Import completed with ${data.errors.length} errors. Check console for details.`);
       console.error('Import errors:', data.errors);
     } else {
-      const balanceMsg = currentBalance !== undefined ? `\nBalance updated to: $${currentBalance.toFixed(2)}` : '';
       const postedMsg = postedCount > 0 ? `\nPending→Posted: ${postedCount}` : '';
-      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}${postedMsg}${balanceMsg}`);
+      alert(`Import complete!\nNew: ${newCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}${postedMsg}`);
     }
   };
 
-  const handleAddAccount = (account: Omit<Account, 'id'>) => {
-    const newAccount: Account = {
-      ...account,
-      id: `account-${Date.now()}`,
+  const handleAddTransaction = (transaction: Omit<Transaction, 'id' | 'accountId'>) => {
+    if (!activeAccountId) return;
+    const newTransaction: Transaction = {
+      ...transaction,
+      id: `manual-${Date.now()}`,
+      accountId: activeAccountId,
     };
-    const newAccounts = [...accounts, newAccount];
-    setAccounts(newAccounts);
-    setActiveAccountId(newAccount.id);
+    setTransactions([...transactions, newTransaction]);
   };
 
-  const handleUpdateAccount = (account: Account) => {
-    setAccounts(accounts.map(a => a.id === account.id ? account : a));
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions(transactions.filter(t => t.id !== id));
+  };
+
+  const handleDeleteMultipleTransactions = (ids: string[]) => {
+    const idsSet = new Set(ids);
+    setTransactions(transactions.filter(t => !idsSet.has(t.id)));
+  };
+
+  const handleUpdateTransaction = (transaction: Transaction) => {
+    if (transaction.id.startsWith('proj-')) {
+      const newVisibility = new Map(projectedVisibility);
+      newVisibility.set(transaction.id, transaction.isProjectedVisible !== false);
+      setProjectedVisibility(newVisibility);
+
+      const newState = new Map(projectedState);
+      newState.set(transaction.id, {
+        isReconciled: transaction.isReconciled,
+        isPending: transaction.isPending,
+        isProjectedVisible: transaction.isProjectedVisible,
+      });
+      setProjectedState(newState);
+    } else {
+      setTransactions(transactions.map(t => t.id === transaction.id ? transaction : t));
+    }
+  };
+
+  const handleDismissProjection = (projectionId: string) => {
+    setDismissedProjections(new Set([...dismissedProjections, projectionId]));
+  };
+
+  const handleAddBill = (bill: Omit<RecurringBill, 'id' | 'accountId'>) => {
+    if (!activeAccountId) return;
+    const newBill: RecurringBill = {
+      ...bill,
+      id: `bill-${Date.now()}`,
+      accountId: activeAccountId,
+    };
+    setRecurringBills([...recurringBills, newBill]);
+  };
+
+  const handleUpdateBill = (bill: RecurringBill) => {
+    setRecurringBills(recurringBills.map(b => b.id === bill.id ? bill : b));
+  };
+
+  const handleDeleteBill = (id: string) => {
+    setRecurringBills(recurringBills.filter(b => b.id !== id));
+  };
+
+  const handleConfirmBillUpdates = (approvedUpdates: Array<{ billId: string; updateDate: boolean; updateAmount: boolean }>) => {
+    const updatedBills = recurringBills.map(bill => {
+      const approval = approvedUpdates.find(a => a.billId === bill.id);
+      if (!approval) return bill;
+
+      const pendingUpdate = pendingBillUpdates.find(u => u.billId === bill.id);
+      if (!pendingUpdate) return bill;
+
+      const updatedBill = { ...bill };
+      if (approval.updateDate) {
+        updatedBill.nextDueDate = pendingUpdate.proposedNextDueDate;
+      }
+      if (approval.updateAmount) {
+        updatedBill.amount = pendingUpdate.importedAmount;
+      }
+      return updatedBill;
+    });
+
+    setRecurringBills(updatedBills);
+    setPendingBillUpdates([]);
+  };
+
+  const handleCancelBillUpdates = () => {
+    setPendingBillUpdates([]);
+  };
+
+  const handleAddDebt = (debt: Omit<Debt, 'id'>) => {
+    const newDebt: Debt = {
+      ...debt,
+      id: `debt-${Date.now()}`,
+    };
+    setDebts([...debts, newDebt]);
+  };
+
+  const handleUpdateDebt = (debt: Debt) => {
+    setDebts(debts.map(d => d.id === debt.id ? debt : d));
+  };
+
+  const handleDeleteDebt = (id: string) => {
+    setDebts(debts.filter(d => d.id !== id));
   };
 
   const handleDataLoaded = (data: {
@@ -221,297 +542,356 @@ function AppMobile() {
     setDebts(data.debts);
   };
 
-  const handleFolderSelected = (dirHandle: FileSystemDirectoryHandle, folderPath: string) => {
+  const handleFolderSelected = useCallback((dirHandle: FileSystemDirectoryHandle, folderPath: string) => {
     setICloudDirHandle(dirHandle);
     setICloudFolderPath(folderPath);
     saveICloudFolderPath(folderPath);
-  };
+  }, []);
+
+
+  // Helper function to calculate current balance from reconciliation point
+  const calculateBalanceFromReconciliation = useCallback((acc: Account, txs: Transaction[]): number => {
+    if (!acc.reconciliationDate || acc.reconciliationBalance === undefined) {
+      return acc.availableBalance || 0;
+    }
+
+    let balance = acc.reconciliationBalance;
+    const transactionsAfterReconciliation = txs.filter(t =>
+      t.accountId === acc.id &&
+      t.date > acc.reconciliationDate! &&
+      !t.description.includes('(Projected)')
+    );
+
+    for (const tx of transactionsAfterReconciliation) {
+      balance -= tx.amount;
+    }
+
+    return Math.round(balance * 100) / 100;
+  }, []);
+
+  // Get effective available balance for current account
+  const effectiveAvailableBalance = useMemo(() => {
+    if (!account) return 0;
+    return calculateBalanceFromReconciliation(account, transactions);
+  }, [account, transactions, calculateBalanceFromReconciliation]);
+
+  // All transactions with projections
+  const allTransactionsWithProjections = useMemo(() => {
+    if (!account) {
+      return calculateBalances(accountTransactions, 0);
+    }
+
+    const effectiveBalance = calculateBalanceFromReconciliation(account, transactions);
+    const today = new Date();
+    const endOfTwoMonthsOut = new Date(today.getFullYear(), today.getMonth() + 3, 0, 23, 59, 59, 999);
+    const daysAhead = Math.ceil((endOfTwoMonthsOut.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    const projections = generateProjections(accountRecurringBills, daysAhead)
+      .filter(projection => {
+        if (dismissedProjections.has(projection.id)) return false;
+        const projectionDate = projection.date.toDateString();
+        const projectionDesc = projection.description.replace(' (Projected)', '');
+        return !accountTransactions.some(t =>
+          t.date.toDateString() === projectionDate &&
+          t.description.toLowerCase() === projectionDesc.toLowerCase()
+        );
+      })
+      .map(projection => {
+        const storedState = projectedState.get(projection.id);
+        return {
+          ...projection,
+          isProjectedVisible: storedState?.isProjectedVisible !== undefined
+            ? storedState.isProjectedVisible
+            : (projectedVisibility.has(projection.id) ? projectedVisibility.get(projection.id)! : true),
+          isReconciled: storedState?.isReconciled || false,
+          isPending: storedState?.isPending !== undefined ? storedState.isPending : true,
+        };
+      });
+
+    return calculateBalances([...accountTransactions, ...projections], effectiveBalance, account?.reconciliationBalance);
+  }, [account, accountTransactions, accountRecurringBills, dismissedProjections, projectedState, projectedVisibility, transactions, calculateBalanceFromReconciliation]);
+
+  // Transactions for display in register - filtered by showProjections checkbox
+  const allTransactions = useMemo(() => {
+    if (!showProjections) {
+      return calculateBalances(accountTransactions, effectiveAvailableBalance, account?.reconciliationBalance);
+    }
+    return allTransactionsWithProjections;
+  }, [showProjections, allTransactionsWithProjections, accountTransactions, effectiveAvailableBalance, account]);
+
+  // Calculate current balance
+  const currentBalance = useMemo(() => {
+    const actualTransactions = allTransactions.filter(t =>
+      !t.description.includes('(Projected)')
+    );
+
+    if (actualTransactions.length === 0) {
+      return effectiveAvailableBalance;
+    }
+
+    return actualTransactions[actualTransactions.length - 1].balance;
+  }, [allTransactions, effectiveAvailableBalance]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Mobile Header */}
-      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
+      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-2 pb-2">
         <div className="px-3">
           <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-3 border border-gray-700">
-            {/* Logo */}
-            <div className="flex justify-center mb-3">
+            {/* Top Bar: Logo and Hamburger Menu */}
+            <div className="flex items-center justify-between mb-3">
               <img
                 src={logo}
                 alt={`${APP_OWNER}'s Finance Tracker`}
-                className="h-20 w-auto object-contain"
+                className="h-[72px] w-auto object-contain"
                 title={`${APP_OWNER}'s Finance Tracker`}
+              />
+              <MobileHamburgerMenu
+                accounts={accounts}
+                activeAccountId={activeAccountId}
+                transactions={transactions}
+                onSelectAccount={handleSelectAccount}
+                onManageAccounts={() => setShowAccountManagement(true)}
               />
             </div>
 
-            {/* Account Tiles */}
+            {/* Account Info Header */}
             <div className="mb-3">
-              {/* Checking/Savings Accounts */}
-              <div className="flex flex-wrap justify-center gap-2 mb-2">
-                {accounts
-                  .filter(acc => acc.accountType !== 'credit_card')
-                  .map(acc => {
-                    const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                    const accBalance = accTransactions.length > 0
-                      ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                      : acc.availableBalance || 0;
-
-                    const displayBalance = accBalance;
-                    const balanceColorStyle = accBalance >= 0 ? '#4ade80' : '#f87171';
-
-                    return (
-                      <button
-                        key={acc.id}
-                        onClick={() => handleSelectAccount(acc.id)}
-                        className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[90px] ${
-                          acc.id === activeAccountId
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
-                            : 'bg-gray-700/50 hover:bg-gray-700'
-                        }`}
-                        title={`${acc.name} - ${acc.institution}`}
-                      >
-                        <span className={`text-[10px] font-semibold ${acc.id === activeAccountId ? 'text-white' : 'text-gray-200'}`}>
-                          {acc.name}
-                        </span>
-                        <span className={`text-[9px] opacity-70 ${acc.id === activeAccountId ? 'text-white' : 'text-gray-400'}`}>
-                          {acc.institution}
-                        </span>
-                        <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
-                          ${displayBalance.toFixed(2)}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-
-              {/* Credit Cards */}
-              <div className="flex flex-wrap justify-center gap-2">
-                {accounts
-                  .filter(acc => acc.accountType === 'credit_card')
-                  .map(acc => {
-                    const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                    const accBalance = accTransactions.length > 0
-                      ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                      : acc.availableBalance || 0;
-
-                    const displayBalance = accBalance;
-                    const balanceColorStyle = accBalance < 0 ? '#f87171' : '#4ade80';
-
-                    return (
-                      <button
-                        key={acc.id}
-                        onClick={() => handleSelectAccount(acc.id)}
-                        className={`px-2.5 py-2 rounded-lg transition-all font-medium text-xs flex flex-col items-center min-w-[90px] ${
-                          acc.id === activeAccountId
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 shadow-lg'
-                            : 'bg-gray-700/50 hover:bg-gray-700'
-                        }`}
-                        title={`${acc.name} - ${acc.institution}`}
-                      >
-                        <span className={`text-[10px] font-semibold ${acc.id === activeAccountId ? 'text-white' : 'text-gray-200'}`}>
-                          {acc.name}
-                        </span>
-                        <span className={`text-[9px] opacity-70 ${acc.id === activeAccountId ? 'text-white' : 'text-gray-400'}`}>
-                          {acc.institution}
-                        </span>
-                        <span className="text-sm font-bold mt-1" style={{ color: balanceColorStyle }}>
-                          ${displayBalance.toFixed(2)}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
+              <MobileAccountHeader account={account} currentBalance={currentBalance} />
             </div>
 
-            {/* Summary Section */}
-            <div className="bg-gray-700/50 rounded-lg px-3 py-2 border border-gray-600 mb-3">
-              <div className="flex justify-around text-center">
-                <div>
-                  <div className="text-[10px] text-gray-400">Checking/Savings</div>
-                  <div className="text-base font-bold text-green-400">
-                    ${(() => {
-                      const checkingSavingsTotal = accounts
-                        .filter(acc => acc.accountType !== 'credit_card')
-                        .reduce((sum, acc) => {
-                          const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                          const accBalance = accTransactions.length > 0
-                            ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                            : acc.availableBalance || 0;
-                          return sum + accBalance;
-                        }, 0);
-                      return checkingSavingsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    })()}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-gray-400">Credit Cards Owed</div>
-                  <div className="text-base font-bold text-red-400">
-                    ${(() => {
-                      const creditCardTotal = accounts
-                        .filter(acc => acc.accountType === 'credit_card')
-                        .reduce((sum, acc) => {
-                          const accTransactions = transactions.filter(t => t.accountId === acc.id);
-                          const accBalance = accTransactions.length > 0
-                            ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
-                            : acc.availableBalance || 0;
-                          return sum + Math.abs(Math.min(0, accBalance));
-                        }, 0);
-                      return creditCardTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    })()}
-                  </div>
-                </div>
+            {/* Projection Bar */}
+            {account && (
+              <div className="mb-3">
+                <MobileProjectionBar
+                  allTransactionsWithProjections={allTransactionsWithProjections}
+                  currentBalance={currentBalance}
+                />
               </div>
-            </div>
-
-            {/* Manage Accounts Button */}
-            <button
-              onClick={() => setShowAccountManagement(true)}
-              className="w-full px-3 py-2 bg-gray-700/50 hover:bg-gray-700 text-gray-300 rounded-lg transition-all text-xs mb-3"
-            >
-              Manage Accounts
-            </button>
+            )}
 
             {/* Tab Navigation */}
-            <nav className="flex gap-2">
+            <MobileTabNav currentTab={currentTab} onTabChange={setCurrentTab} />
+
+            {/* Quick Actions Row */}
+            <div className="mt-3 flex gap-2 overflow-x-auto scrollbar-hide">
               <button
-                onClick={() => setCurrentTab('balance')}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                  currentTab === 'balance'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                    : 'bg-gray-800 text-gray-400'
-                }`}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.csv,.pdf';
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const isCSV = file.name.toLowerCase().endsWith('.csv');
+                      const isPDF = file.name.toLowerCase().endsWith('.pdf');
+                      if (!isCSV && !isPDF) {
+                        alert('Please select a CSV or PDF file');
+                        return;
+                      }
+                      try {
+                        let data: ParsedCSVData;
+                        let statementData: any = undefined;
+                        if (isPDF) {
+                          const { parseBankStatementPDF } = await import('./utils/pdfParser');
+                          const pdfData = await parseBankStatementPDF(file);
+                          data = pdfData;
+                          statementData = pdfData.statementData;
+                        } else {
+                          data = await parseCSV(file, account?.accountType);
+                        }
+                        handleImportComplete(data, undefined, undefined, statementData);
+                      } catch (error) {
+                        console.error('Error parsing file:', error);
+                        alert(`Failed to parse ${isPDF ? 'PDF' : 'CSV'} file. Please check the format.`);
+                      }
+                    }
+                  };
+                  input.click();
+                }}
+                className="flex-shrink-0 px-3 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-all text-xs flex items-center gap-1.5 border border-green-500/30"
               >
-                Balance
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span className="whitespace-nowrap">Import</span>
               </button>
+
               <button
-                onClick={() => setCurrentTab('transactions')}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                  currentTab === 'transactions'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                    : 'bg-gray-800 text-gray-400'
-                }`}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.json';
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      try {
+                        const text = await file.text();
+                        const data = JSON.parse(text);
+
+                        // Validate the data structure
+                        if (!data.transactions || !data.accounts) {
+                          alert('Invalid data file format. Please select a valid finance tracker JSON file.');
+                          return;
+                        }
+
+                        // Load the data
+                        handleDataLoaded({
+                          transactions: data.transactions.map((t: any) => ({
+                            ...t,
+                            date: new Date(t.date)
+                          })),
+                          accounts: data.accounts.map((a: any) => ({
+                            ...a,
+                            reconciliationDate: a.reconciliationDate ? new Date(a.reconciliationDate) : undefined,
+                            paymentDueDate: a.paymentDueDate ? new Date(a.paymentDueDate) : undefined
+                          })),
+                          activeAccountId: data.activeAccountId,
+                          recurringBills: data.recurringBills.map((b: any) => ({
+                            ...b,
+                            nextDueDate: new Date(b.nextDueDate)
+                          })),
+                          debts: data.debts || []
+                        });
+
+                        alert('Data updated successfully from file!');
+                      } catch (error) {
+                        console.error('Error loading data file:', error);
+                        alert('Failed to load data file. Please check the file format.');
+                      }
+                    }
+                  };
+                  input.click();
+                }}
+                className="flex-shrink-0 px-3 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg transition-all text-xs flex items-center gap-1.5"
               >
-                Transactions
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span className="whitespace-nowrap">Update Data</span>
               </button>
-              <button
-                onClick={() => setCurrentTab('sync')}
-                className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-all ${
-                  currentTab === 'sync'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
-                    : 'bg-gray-800 text-gray-400'
-                }`}
-              >
-                Sync
-              </button>
-            </nav>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="px-4 py-4 pb-20">
-        {currentTab === 'balance' && (
-          <div className="space-y-4">
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-xl p-4 border border-green-500/30">
-                <p className="text-xs text-green-300 mb-1">Projected (60d)</p>
-                <p className="text-2xl font-bold text-white">
-                  ${projectedBalance.toFixed(2)}
-                </p>
+      {/* Tab Content */}
+      <div className="px-3 pb-5">
+        <div className="bg-gray-800 rounded-2xl shadow-xl p-4 border border-gray-700">
+          {/* Account Details Tab */}
+          {currentTab === 'account' && (
+            <div className="space-y-4">
+              <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
+                <dl className="grid grid-cols-1 gap-4">
+                  <div>
+                    <dt className="text-sm text-gray-400">Account Number</dt>
+                    <dd className="text-lg font-medium text-white">•••• {account?.accountNumber.slice(-4)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-gray-400">Routing Number</dt>
+                    <dd className="text-lg font-medium text-white">{account?.routingNumber}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-gray-400">Institution</dt>
+                    <dd className="text-lg font-medium text-white">{account?.institution}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-gray-400">Account Type</dt>
+                    <dd className="text-lg font-medium text-white">
+                      {account?.accountType === 'credit_card' ? 'Credit Card' : account?.accountType === 'checking' ? 'Checking' : 'Savings'}
+                    </dd>
+                  </div>
+                </dl>
               </div>
-              <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-xl p-4 border border-purple-500/30">
-                <p className="text-xs text-purple-300 mb-1">Transactions</p>
-                <p className="text-2xl font-bold text-white">{accountTransactions.length}</p>
-              </div>
-            </div>
 
-            {/* Import Section */}
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-              <h3 className="text-lg font-semibold text-white mb-3">Import Transactions</h3>
-              <div className="space-y-2">
-                <CSVImport onImportComplete={handleImportComplete} />
-                <JSONImport onImportComplete={handleImportComplete} />
-              </div>
-            </div>
-
-            {/* Recent Transactions */}
-            <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-              <h3 className="text-lg font-semibold text-white mb-3">Recent Transactions</h3>
-              {accountTransactions.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No transactions yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {accountTransactions
-                    .sort((a, b) => b.date.getTime() - a.date.getTime())
-                    .slice(0, 10)
-                    .map(tx => (
-                      <div key={tx.id} className="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white text-sm font-medium truncate">{tx.description}</p>
-                          <p className="text-gray-400 text-xs">{tx.date.toLocaleDateString()}</p>
-                        </div>
-                        <div className="text-right ml-2">
-                          <p className={`text-sm font-semibold ${
-                            tx.amount < 0 ? 'text-red-400' : 'text-green-400'
-                          }`}>
-                            {tx.amount < 0 ? '-' : '+'}${Math.abs(tx.amount).toFixed(2)}
-                          </p>
-                          <p className="text-xs text-gray-400">${tx.balance.toFixed(2)}</p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
+              {/* Apple Card Installments Section */}
+              {account?.name.toLowerCase().includes('apple') && account?.accountType === 'credit_card' && (
+                <AppleCardInstallments transactions={accountTransactions} />
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {currentTab === 'transactions' && (
-          <div className="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <h2 className="text-xl font-bold text-white mb-4">All Transactions</h2>
-            {accountTransactions.length === 0 ? (
-              <p className="text-gray-400 text-center py-8">No transactions yet. Import a CSV to get started.</p>
-            ) : (
-              <div className="space-y-2">
-                {accountTransactions
-                  .sort((a, b) => b.date.getTime() - a.date.getTime())
-                  .map(tx => (
-                    <div key={tx.id} className="flex justify-between items-center py-3 border-b border-gray-700 last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium">{tx.description}</p>
-                        <div className="flex gap-2 mt-1">
-                          <span className="text-xs text-gray-400">{tx.date.toLocaleDateString()}</span>
-                          <span className="text-xs text-gray-500">•</span>
-                          <span className="text-xs text-gray-400">{tx.category}</span>
-                        </div>
-                      </div>
-                      <div className="text-right ml-2">
-                        <p className={`text-sm font-semibold ${
-                          tx.amount < 0 ? 'text-red-400' : 'text-green-400'
-                        }`}>
-                          {tx.amount < 0 ? '-' : '+'}${Math.abs(tx.amount).toFixed(2)}
-                        </p>
-                        <p className="text-xs text-gray-400">${tx.balance.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
+          {/* Register Tab */}
+          {currentTab === 'register' && (
+            <TransactionRegister
+              transactions={allTransactions}
+              onAddTransaction={handleAddTransaction}
+              onDeleteTransaction={handleDeleteTransaction}
+              onDeleteMultipleTransactions={handleDeleteMultipleTransactions}
+              onCreateRecurringBill={handleAddBill}
+              onUpdateTransaction={handleUpdateTransaction}
+              onDismissProjection={handleDismissProjection}
+              recurringBills={accountRecurringBills}
+              showProjections={showProjections}
+              onShowProjectionsChange={setShowProjections}
+            />
+          )}
 
-        {currentTab === 'sync' && (
-          <ICloudSync
-            transactions={transactions}
-            accounts={accounts}
-            activeAccountId={activeAccountId}
-            recurringBills={recurringBills}
-            debts={debts}
-            iCloudDirHandle={iCloudDirHandle}
-            onDataLoaded={handleDataLoaded}
-            onFolderSelected={handleFolderSelected}
-          />
-        )}
+          {/* Recurring Bills Tab */}
+          {currentTab === 'recurring' && (
+            <div className="space-y-6">
+              <RecurringSuggestions
+                transactions={accountTransactions}
+                existingBills={accountRecurringBills}
+                onAddBill={handleAddBill}
+              />
+              <RecurringBillsManager
+                bills={accountRecurringBills}
+                onAddBill={handleAddBill}
+                onUpdateBill={handleUpdateBill}
+                onDeleteBill={handleDeleteBill}
+              />
+            </div>
+          )}
+
+          {/* Projections Tab */}
+          {currentTab === 'projections' && (
+            <Projections
+              transactions={allTransactionsWithProjections}
+              currentBalance={account?.availableBalance || 0}
+            />
+          )}
+
+          {/* Spending Charts Tab */}
+          {currentTab === 'charts' && (
+            <SpendingCharts
+              transactions={transactions}
+              accounts={accounts}
+              activeAccountId={activeAccountId}
+            />
+          )}
+
+          {/* Merchants Tab */}
+          {currentTab === 'merchants' && (
+            <MerchantManagement
+              transactions={accountTransactions}
+            />
+          )}
+
+          {/* Debts Tab */}
+          {currentTab === 'debts' && (
+            <DebtsTracker
+              debts={debts}
+              onAddDebt={handleAddDebt}
+              onUpdateDebt={handleUpdateDebt}
+              onDeleteDebt={handleDeleteDebt}
+            />
+          )}
+
+          {/* iCloud Sync Tab */}
+          {currentTab === 'sync' && (
+            <ICloudSync
+              transactions={transactions}
+              accounts={accounts}
+              activeAccountId={activeAccountId}
+              recurringBills={recurringBills}
+              debts={debts}
+              iCloudDirHandle={iCloudDirHandle}
+              onDataLoaded={handleDataLoaded}
+              onFolderSelected={handleFolderSelected}
+            />
+          )}
+        </div>
       </div>
 
       {/* Account Management Modal */}
@@ -520,15 +900,38 @@ function AppMobile() {
           accounts={accounts}
           onAddAccount={handleAddAccount}
           onUpdateAccount={handleUpdateAccount}
-          onDeleteAccount={(id) => {
-            setAccounts(accounts.filter(a => a.id !== id));
-            if (activeAccountId === id) {
-              setActiveAccountId(accounts.filter(a => a.id !== id)[0]?.id || '');
-            }
-          }}
+          onDeleteAccount={handleDeleteAccount}
           onClose={() => setShowAccountManagement(false)}
         />
       )}
+
+      {/* Recurring Bill Update Prompt */}
+      {pendingBillUpdates.length > 0 && (
+        <RecurringBillUpdatePrompt
+          updates={pendingBillUpdates}
+          onConfirm={handleConfirmBillUpdates}
+          onCancel={handleCancelBillUpdates}
+        />
+      )}
+
+      {/* Version/Build Info - Floating Box */}
+      <div className="fixed bottom-4 right-4 bg-gray-800/90 backdrop-blur-sm border border-gray-700 rounded-lg px-3 py-2 shadow-xl z-50">
+        <div className="text-xs text-gray-400 space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-gray-300">v{VERSION}</span>
+          </div>
+          <div className="text-[10px] text-gray-500">
+            {new Date(BUILD_DATE).toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

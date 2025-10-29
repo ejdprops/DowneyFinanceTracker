@@ -18,7 +18,12 @@
       "Bash(cat:*)",
       "Bash(echo:*)",
       "Bash(VITE_BASE_PATH=\"/DowneyFinanceTracker/\" npm run build)",
-      "Bash(VITE_APP_OWNER=\"Family\" npm run build:*)"
+      "Bash(VITE_APP_OWNER=\"Family\" npm run build:*)",
+      "Bash(npx gh-pages:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(git fetch:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

@@ -114,61 +114,63 @@ export const Projections: React.FC<ProjectionsProps> = ({ transactions, currentB
                   <h4 className="text-lg font-semibold text-white">{monthName}</h4>
                 </div>
 
-                <div className="grid grid-cols-4 gap-4 mb-4">
-                  <div className="bg-gray-700/50 rounded-xl p-3">
-                    <p className="text-xs text-gray-400">
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <div className="bg-gray-700/50 rounded-lg p-2">
+                    <p className="text-[10px] text-gray-400 leading-tight">
                       {isCurrentMonth ? 'Current Balance' : 'Projected Start'}
                     </p>
-                    <p className={`text-lg font-semibold ${(isCurrentMonth ? currentBalance : startBalance) < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                    <p className={`text-sm font-semibold ${(isCurrentMonth ? currentBalance : startBalance) < 0 ? 'text-red-400' : 'text-green-400'}`}>
                       ${(isCurrentMonth ? currentBalance : startBalance).toFixed(2)}
                     </p>
                   </div>
-                  <div className="bg-green-500/20 rounded-xl p-3">
-                    <p className="text-xs text-green-300">
+                  <div className="bg-green-500/20 rounded-lg p-2">
+                    <p className="text-[10px] text-green-300 leading-tight">
                       {isCurrentMonth ? 'Projected Income' : 'Projected Income'}
                     </p>
-                    <p className="text-lg font-semibold text-white">+${monthIncome.toFixed(2)}</p>
+                    <p className="text-sm font-semibold text-white">+${monthIncome.toFixed(2)}</p>
                   </div>
-                  <div className="bg-red-500/20 rounded-xl p-3">
-                    <p className="text-xs text-red-300">
+                  <div className="bg-red-500/20 rounded-lg p-2">
+                    <p className="text-[10px] text-red-300 leading-tight">
                       {isCurrentMonth ? 'Projected Expenses' : 'Projected Expenses'}
                     </p>
-                    <p className="text-lg font-semibold text-white">-${monthExpenses.toFixed(2)}</p>
+                    <p className="text-sm font-semibold text-white">-${monthExpenses.toFixed(2)}</p>
                   </div>
-                  <div className="bg-blue-500/20 rounded-xl p-3">
-                    <p className="text-xs text-blue-300">
+                  <div className="bg-blue-500/20 rounded-lg p-2">
+                    <p className="text-[10px] text-blue-300 leading-tight">
                       {isCurrentMonth ? 'Projected End' : 'Projected End'}
                     </p>
-                    <p className={`text-lg font-semibold ${endBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                    <p className={`text-sm font-semibold ${endBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
                       ${endBalance.toFixed(2)}
                     </p>
                   </div>
                 </div>
 
                 {/* Transaction List */}
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {monthTransactions.map((t, idx) => (
                     <div
                       key={idx}
-                      className="flex justify-between items-center bg-gray-700/30 rounded-xl p-3"
+                      className="bg-gray-700/30 rounded-lg p-2"
                     >
-                      <div className="flex-1">
-                        <p className="text-white font-medium">{t.description}</p>
-                        <p className="text-sm text-gray-400">
+                      <div className="flex items-start justify-between mb-1">
+                        <p className="text-white font-medium text-xs leading-tight flex-1">{t.description}</p>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]">
+                        <p className="text-gray-400">
                           {t.date.toLocaleDateString()} • {t.category}
                         </p>
-                      </div>
-                      <div className="flex items-center gap-6 text-right">
-                        <p className={`font-semibold ${
-                          t.amount < 0 ? 'text-red-400' : 'text-green-400'
-                        }`}>
-                          {t.amount < 0 ? '-' : '+'}${Math.abs(t.amount).toFixed(2)}
-                        </p>
-                        <p className={`font-semibold ${
-                          t.balance < 0 ? 'text-red-400' : 'text-green-400'
-                        }`}>
-                          ${t.balance.toFixed(2)}
-                        </p>
+                        <div className="flex items-center gap-3">
+                          <p className={`font-semibold ${
+                            t.amount < 0 ? 'text-red-400' : 'text-green-400'
+                          }`}>
+                            {t.amount < 0 ? '-' : '+'}${Math.abs(t.amount).toFixed(2)}
+                          </p>
+                          <p className={`font-semibold ${
+                            t.balance < 0 ? 'text-red-400' : 'text-green-400'
+                          }`}>
+                            Bal: ${t.balance.toFixed(2)}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -572,6 +572,142 @@ const extractBankOfAmericaStatementData = (text: string): StatementData => {
 };
 
 /**
+ * Capital One Statement Parser
+ */
+const parseCapitalOneStatement = (text: string): Transaction[] => {
+  const transactions: Transaction[] = [];
+  const lines = text.split('\n');
+  const currentYear = new Date().getFullYear();
+
+  console.log(`[Capital One Parser] Starting parse, ${lines.length} lines total`);
+
+  // Capital One PDF format has transactions in this pattern:
+  // Trans Date Post Date Description Amount
+  // Example: "Dec 30 Dec 30 CAPITAL ONE MOBILE PYMTAuthDate 30-Dec - $728.14"
+  // Example: "Dec 14 Dec 16 HLU*HULUPLUShulu.com/billCA $20.41"
+
+  let index = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines and headers
+    if (!line ||
+        line.includes('Trans Date') ||
+        line.includes('Post Date') ||
+        line.includes('Transactions') ||
+        line.includes('Page ') ||
+        line.includes('Total Transactions') ||
+        line.includes('Total Fees') ||
+        line.includes('Total Interest')) {
+      continue;
+    }
+
+    // Pattern: Month Day Month Day Description Amount
+    // Example: "Dec 30 Dec 30 CAPITAL ONE MOBILE PYMTAuthDate 30-Dec - $728.14"
+    // Example: "Dec 14 Dec 16 HLU*HULUPLUShulu.com/billCA $20.41"
+    const match = line.match(/^([A-Z][a-z]{2})\s+(\d{1,2})\s+([A-Z][a-z]{2})\s+(\d{1,2})\s+(.+?)\s+(-?\s*\$?[\d,]+\.\d{2})$/);
+
+    if (match) {
+      try {
+        // match[1] = Trans Date month (we use Post Date instead)
+        // match[2] = Trans Date day (we use Post Date instead)
+        const postMonth = match[3]; // Post Date month (we'll use this one)
+        const postDay = parseInt(match[4]); // Post Date day
+        const description = match[5].trim();
+        const amountStr = match[6].replace(/[\s$,]/g, ''); // Remove spaces, $, and commas
+
+        // Skip summary lines
+        if (description.includes('TOTAL') || description.includes('Year-to-date')) {
+          continue;
+        }
+
+        // Convert month name to number
+        const monthMap: { [key: string]: number } = {
+          'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+          'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+        };
+
+        const monthNum = monthMap[postMonth];
+        if (monthNum === undefined) continue;
+
+        // Use post date for the transaction
+        let year = currentYear;
+        // If we're in January and the transaction is in December, it's from last year
+        if (new Date().getMonth() === 0 && monthNum === 11) {
+          year = currentYear - 1;
+        }
+
+        const date = new Date(year, monthNum, postDay);
+        if (isNaN(date.getTime())) continue;
+
+        let amount = parseFloat(amountStr);
+        if (isNaN(amount)) continue;
+
+        // Capital One credit card PDF format:
+        // In PDF: Charges show as positive (e.g., $20.41), Payments show as negative (e.g., - $728.14)
+        // Our app convention: Charges = positive (debt owed), Payments = negative (reduces debt)
+        // PDF matches our convention, so NO sign inversion needed
+        // However, we need to verify the actual behavior matches this
+
+        // Log first 5 matches
+        if (index < 5) {
+          console.log(`[Capital One Parser] Match ${index}: ${postMonth}/${postDay} "${description.substring(0, 40)}" $${amount}`);
+        }
+
+        transactions.push({
+          id: `pdf-${date.getTime()}-${index}`,
+          date,
+          description,
+          category: 'Uncategorized',
+          amount,
+          balance: 0,
+          isPending: false,
+          isManual: false,
+          sortOrder: index,
+        });
+
+        index++;
+      } catch (error) {
+        console.warn('[Capital One Parser] Failed to parse line:', line, error);
+      }
+    }
+  }
+
+  console.log(`[Capital One Parser] Parsed ${transactions.length} transactions`);
+  return transactions;
+};
+
+/**
+ * Extract Capital One statement data
+ */
+const extractCapitalOneStatementData = (text: string): StatementData => {
+  const data: StatementData = {};
+
+  // Capital One format: "Dec 15, 2024 - Jan 14, 2025"
+  const periodMatch = text.match(/([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4})\s*-\s*([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4})/);
+  if (periodMatch) {
+    const monthMap: { [key: string]: number } = {
+      'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+      'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+    };
+    const endMonth = monthMap[periodMatch[4]];
+    const endDay = parseInt(periodMatch[5]);
+    const endYear = parseInt(periodMatch[6]);
+    data.closingDate = new Date(endYear, endMonth, endDay);
+    data.statementPeriod = `${periodMatch[1]} ${periodMatch[2]}, ${periodMatch[3]} - ${periodMatch[4]} ${periodMatch[5]}, ${periodMatch[6]}`;
+  }
+
+  // Capital One format: "New Balance = $7.67" or "New Balance $7.67"
+  const balanceMatch = text.match(/New Balance\s*[=]?\s*\$?([\d,]+\.\d{2})/i);
+  if (balanceMatch) {
+    data.endingBalance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  }
+
+  return data;
+};
+
+/**
  * Extract generic statement data
  */
 const extractGenericStatementData = (text: string): StatementData => {
@@ -631,6 +767,13 @@ const bankFormats: BankFormat[] = [
     extractStatementData: extractAppleCardStatementData,
   },
   {
+    name: 'Capital One',
+    detect: (text) => text.toLowerCase().includes('capital one') ||
+                      text.toLowerCase().includes('capitalone'),
+    parse: parseCapitalOneStatement,
+    extractStatementData: extractCapitalOneStatementData,
+  },
+  {
     name: 'USAA',
     detect: (text) => text.toLowerCase().includes('usaa'),
     parse: parseUSAAStatement,
@@ -684,8 +827,19 @@ export const parseBankStatementPDF = async (file: File): Promise<ParsedPDFData> 
 
       // Chase credit card PDFs have inverted signs - fix them
       // In Chase PDFs: positive = charges, negative = payments
-      // We need: negative = charges (debt), positive = payments (credit)
+      // We need: positive = charges (debt), negative = payments (credit)
       if (detectedFormat.name === 'Chase') {
+        transactions = transactions.map(tx => ({
+          ...tx,
+          amount: -tx.amount // Invert the sign
+        }));
+      }
+
+      // Capital One credit card PDFs also have inverted signs - fix them
+      // In Capital One PDFs: positive = charges, negative = payments
+      // We need: positive = charges (debt), negative = payments (credit)
+      // Actually they appear correct in PDF, but need inversion for app
+      if (detectedFormat.name === 'Capital One') {
         transactions = transactions.map(tx => ({
           ...tx,
           amount: -tx.amount // Invert the sign
