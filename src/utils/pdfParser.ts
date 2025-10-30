@@ -376,6 +376,171 @@ const extractAppleCardStatementData = (text: string): StatementData => {
 };
 
 /**
+ * Synchrony Bank Statement Parser
+ * Returns object with transactions and optional account balance
+ */
+const parseSynchronyStatement = (text: string): { transactions: Transaction[]; balance?: number; promotionalPurchases?: PromotionalPurchase[] } => {
+  const transactions: Transaction[] = [];
+  const promotionalPurchases: PromotionalPurchase[] = [];
+
+  console.log('Synchrony parser - Text length:', text.length);
+
+  // Extract "New Balance" from the statement
+  // Pattern: "New Balance" followed by amount like $2,933.14
+  const balanceMatch = text.match(/New Balance[:\s]+\$?([\d,]+\.\d{2})/);
+  let accountBalance: number | undefined;
+
+  if (balanceMatch) {
+    const balanceStr = balanceMatch[1].replace(/,/g, '');
+    // Synchrony is a credit card - balance owed should be negative in the app
+    accountBalance = -Math.abs(parseFloat(balanceStr));
+    console.log('Found account balance (credit card):', accountBalance);
+  }
+
+  // Extract Promotional Purchases
+  // Pattern: ExpirationDate PromoBalance DeferredInterest TranDate Description InitialAmount
+  // Example: 10/31/2025 $305.84 $97.66 04/02/2025 Deferred Interest/No Interest If Paid In Full $636.84
+  // Example: 01/22/2027 $75.59 $0.00 07/03/2024 Equal Payment No Interest $180.59
+  // Made description greedy (.+) and use lookahead to stop at final dollar amount
+  const promoPattern = /(\d{2}\/\d{2}\/\d{4})\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})\s+(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+\$?([\d,]+\.\d{2})(?=\s+\d{2}\/\d{2}\/\d{4}|\s*$)/g;
+
+  let promoMatch;
+  let promoIndex = 0;
+
+  while ((promoMatch = promoPattern.exec(text)) !== null) {
+    try {
+      const expirationDateStr = promoMatch[1];
+      const promoBalanceStr = promoMatch[2].replace(/,/g, '');
+      const deferredInterestStr = promoMatch[3].replace(/,/g, '');
+      const tranDateStr = promoMatch[4];
+      const description = promoMatch[5].trim();
+      const initialAmountStr = promoMatch[6].replace(/,/g, '');
+
+      // Only capture if it looks like a valid promotional purchase (not header text)
+      if (description &&
+          !description.includes('Promotional') &&
+          !description.includes('Expiration') &&
+          !description.includes('Tran Date') &&
+          !description.includes('Description')) {
+        const expirationDate = new Date(expirationDateStr);
+        const transactionDate = new Date(tranDateStr);
+        const promotionalBalance = parseFloat(promoBalanceStr);
+        const deferredInterestCharge = parseFloat(deferredInterestStr);
+        const initialAmount = parseFloat(initialAmountStr);
+
+        if (!isNaN(expirationDate.getTime()) && !isNaN(transactionDate.getTime()) &&
+            !isNaN(promotionalBalance) && !isNaN(initialAmount)) {
+          promotionalPurchases.push({
+            id: `promo-${transactionDate.getTime()}-${promoIndex}`,
+            transactionDate,
+            description,
+            initialAmount,
+            promotionalBalance,
+            expirationDate,
+            deferredInterestCharge,
+          });
+          promoIndex++;
+          console.log('Added promotional purchase:', description, promotionalBalance);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to parse promotional purchase:', promoMatch, error);
+    }
+  }
+
+  console.log('Synchrony parser - Found promotional purchases:', promotionalPurchases.length);
+
+  // Synchrony PDFs may have all text concatenated with spaces
+  // Look for transaction patterns: Date Date RefNum Description Amount
+  // Example: 09/15/2025 09/15/2025 F9123008200CHGDDA AUTOMATIC PAYMENT - THANK YOU ($169.35)
+  // Example: 10/15/2025 10/15/2025 F9123009000CHGDDA AUTOMATIC PAYMENT - THANK YOU ($162.41)
+
+  // Pattern: Date, Date, Reference, Description, Amount (with or without parentheses)
+  // Made description more flexible to handle lowercase, numbers, and special chars
+  const transactionPattern = /(\d{2}\/\d{2}\/\d{4})\s+\d{2}\/\d{2}\/\d{4}\s+([A-Z0-9+]+)\s+([A-Z0-9\s\-\/\.,']+?)\s+(\(\$[\d,]+\.\d{2}\)|\$[\d,]+\.\d{2})/gi;
+
+  let match;
+  let index = 0;
+
+  while ((match = transactionPattern.exec(text)) !== null) {
+    try {
+      const dateStr = match[1];
+      const refNum = match[2];
+      let description = match[3].trim();
+      const amountStrRaw = match[4];
+
+      console.log('Found match:', { dateStr, refNum, description, amountStrRaw });
+
+      // Parse amount - remove $ and parentheses, handle commas
+      const amountStr = amountStrRaw.replace(/[\$\(\),]/g, '');
+      let amount = parseFloat(amountStr);
+      if (isNaN(amount)) {
+        console.warn('Invalid amount:', amountStr);
+        continue;
+      }
+
+      // Skip zero amounts (these are often headers like "INTEREST CHARGE ON PURCHASES $0.00")
+      if (amount === 0) {
+        console.log('Skipping zero amount transaction:', description);
+        continue;
+      }
+
+      // Parse date
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date:', dateStr);
+        continue;
+      }
+
+      // Check if amount was in parentheses (means payment/credit)
+      const isPayment = amountStrRaw.startsWith('($') ||
+                       description.toLowerCase().includes('payment') ||
+                       description.toLowerCase().includes('credit');
+
+      // For credit cards in this app:
+      // - Payments should be POSITIVE (reduce debt, make balance less negative)
+      // - Charges/Fees should be NEGATIVE (increase debt, make balance more negative)
+      if (isPayment) {
+        amount = Math.abs(amount);  // Payments are positive
+      } else {
+        amount = -Math.abs(amount);  // Charges are negative
+      }
+
+      // Clean up description - remove trailing FEES if present
+      description = description.replace(/\s+FEES\s*$/, '').trim();
+
+      // Skip common header/footer descriptions
+      if (description &&
+          description !== 'FEES' &&
+          description !== 'INTEREST CHARGED' &&
+          !description.includes('TOTAL') &&
+          description !== 'CHARGE ON PURCHASES') {
+        transactions.push({
+          id: `pdf-${date.getTime()}-${index}`,
+          date,
+          description,
+          category: description.toLowerCase().includes('fee') ? 'Fees' :
+                   description.toLowerCase().includes('interest') ? 'Interest' :
+                   description.toLowerCase().includes('payment') ? 'Payment' : 'Uncategorized',
+          amount,
+          balance: 0,
+          isPending: false,
+          isManual: false,
+          sortOrder: index,
+        });
+        index++;
+        console.log('Added transaction:', description, amount);
+      }
+    } catch (error) {
+      console.warn('Failed to parse match:', match, error);
+    }
+  }
+
+  console.log('Synchrony parser - Found transactions:', transactions.length);
+  return { transactions, balance: accountBalance, promotionalPurchases: promotionalPurchases.length > 0 ? promotionalPurchases : undefined };
+};
+
+/**
  * Apple Card Statement Parser
  */
 const parseAppleCardStatement = (text: string): Transaction[] => {
