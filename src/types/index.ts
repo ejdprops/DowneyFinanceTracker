@@ -2,6 +2,7 @@ export interface Transaction {
   id: string;
   accountId?: string; // Links transaction to specific account (optional for backward compatibility)
   recurringBillId?: string; // Links transaction to recurring bill (for projected and matched transactions)
+  linkedTransactionId?: string; // Links to corresponding transaction in another account (e.g., payment from checking to credit card)
   date: Date;
   description: string;
   category: string;
@@ -29,6 +30,7 @@ export interface Account {
   minimumPayment?: number; // Minimum payment amount for credit cards
   paymentDueDate?: Date; // Exact payment due date for credit cards
   isDefault?: boolean; // Mark one account as default
+  promotionalPurchases?: PromotionalPurchase[]; // Promotional purchases (Synchrony only)
   reconciliationDate?: Date; // Date of last statement reconciliation
   reconciliationBalance?: number; // Statement ending balance at that date
   lastReconciliationSource?: string; // e.g., "Apple Card Statement - Jan 2025"
@@ -64,6 +66,8 @@ export interface Debt {
 export interface ParsedCSVData {
   transactions: Transaction[];
   errors: string[];
+  accountBalance?: number; // Optional account balance extracted from statement
+  promotionalPurchases?: PromotionalPurchase[]; // Optional promotional purchases (Synchrony only)
 }
 
 export interface MerchantMapping {
@@ -74,4 +78,14 @@ export interface MerchantMapping {
   isCustom: boolean; // True if user-created, false if auto-detected
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface PromotionalPurchase {
+  id: string;
+  transactionDate: Date; // Original purchase date
+  description: string; // e.g., "Equal Payment No Interest"
+  initialAmount: number; // Original purchase amount
+  promotionalBalance: number; // Remaining balance on promotion
+  expirationDate: Date; // Date by which balance must be paid to avoid deferred interest
+  deferredInterestCharge: number; // Amount of deferred interest if not paid in full
 }

@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   DISMISSED_PROJECTIONS: 'usaa_bills_dismissed_projections',
   MERCHANT_MAPPINGS: 'usaa_bills_merchant_mappings',
   ICLOUD_FOLDER_PATH: 'usaa_bills_icloud_folder_path',
+  LAST_SYNC_TIME: 'usaa_bills_last_sync_time',
 };
 
 // Transactions
@@ -232,6 +233,16 @@ export const saveICloudFolderPath = (path: string) => {
 
 export const loadICloudFolderPath = (): string | null => {
   return localStorage.getItem(STORAGE_KEYS.ICLOUD_FOLDER_PATH);
+};
+
+// Last Sync Time
+export const saveLastSyncTime = (date: Date) => {
+  localStorage.setItem(STORAGE_KEYS.LAST_SYNC_TIME, date.toISOString());
+};
+
+export const loadLastSyncTime = (): Date | null => {
+  const saved = localStorage.getItem(STORAGE_KEYS.LAST_SYNC_TIME);
+  return saved ? new Date(saved) : null;
 };
 
 // Clear all data

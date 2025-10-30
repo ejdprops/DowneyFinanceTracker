@@ -41,6 +41,12 @@ export const CSVImport: React.FC<CSVImportProps> = ({ onImportComplete, account 
 
       // Store parsed data and show balance prompt
       setParsedData(data);
+
+      // If PDF contained account balance, pre-fill it
+      if (data.accountBalance !== undefined) {
+        setBalanceInput(data.accountBalance.toFixed(2));
+      }
+
       setIsProcessing(false);
       setShowBalancePrompt(true);
     } catch (error) {

@@ -11,6 +11,8 @@ import { MerchantManagement } from './components/MerchantManagement';
 import { HelpModal } from './components/HelpModal';
 import RecurringBillUpdatePrompt from './components/RecurringBillUpdatePrompt';
 import { AppleCardInstallments } from './components/AppleCardInstallments';
+import PromotionalPurchases from './components/PromotionalPurchases';
+import { PromotionalPurchaseAlert } from './components/PromotionalPurchaseAlert';
 import type { Transaction, Account, RecurringBill, Debt, ParsedCSVData } from './types';
 import {
   saveTransactions,
@@ -27,6 +29,8 @@ import {
   loadDismissedProjections,
   saveICloudFolderPath,
   loadICloudFolderPath,
+  saveLastSyncTime,
+  loadLastSyncTime,
 } from './utils/storage';
 import { saveToICloud, selectICloudFolder } from './utils/icloudStorage';
 import { generateProjections, calculateBalances, getNextOccurrence } from './utils/projections';
@@ -40,7 +44,7 @@ declare const __APP_OWNER__: string;
 // Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
 const APP_OWNER = __APP_OWNER__;
-const VERSION = '1.9.0'; // Added statement reconciliation and fixed Chase PDF parser
+const VERSION = '1.12.0'; // Merged statement reconciliation and promotional purchase features
 
 function App() {
   const [currentTab, setCurrentTab] = useState<'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync'>('account');
@@ -64,7 +68,10 @@ function App() {
   }>>([]);
   const [iCloudDirHandle, setICloudDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [iCloudFolderPath, setICloudFolderPath] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [showPromoAlert, setShowPromoAlert] = useState(false);
 
   // Load data on mount
   useEffect(() => {
@@ -75,6 +82,7 @@ function App() {
     const loadedDebts = loadDebts();
     const loadedDismissedProjections = loadDismissedProjections();
     const savedFolderPath = loadICloudFolderPath();
+    const savedLastSyncTime = loadLastSyncTime();
 
     setTransactions(loadedTransactions);
     setAccounts(migratedAccounts);
@@ -83,6 +91,7 @@ function App() {
     setDebts(loadedDebts);
     setDismissedProjections(loadedDismissedProjections);
     setICloudFolderPath(savedFolderPath);
+    setLastSyncTime(savedLastSyncTime);
   }, []);
 
   // Save data when it changes
@@ -136,6 +145,40 @@ function App() {
     () => recurringBills.filter(b => b.accountId === activeAccountId),
     [recurringBills, activeAccountId]
   );
+
+  // Check for expiring promotional purchases (within 30 days)
+  const expiringPromotions = useMemo(() => {
+    const today = new Date();
+    const thirtyDaysFromNow = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    return accounts.flatMap(account => {
+      if (!account.promotionalPurchases || account.promotionalPurchases.length === 0) {
+        return [];
+      }
+
+      return account.promotionalPurchases
+        .filter(promo => {
+          const expDate = new Date(promo.expirationDate);
+          return expDate >= today && expDate <= thirtyDaysFromNow;
+        })
+        .map(promo => {
+          const expDate = new Date(promo.expirationDate);
+          const daysUntilExpiration = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          return {
+            account,
+            promotion: promo,
+            daysUntilExpiration,
+          };
+        });
+    }).sort((a, b) => a.daysUntilExpiration - b.daysUntilExpiration); // Sort by urgency
+  }, [accounts]);
+
+  // Show promotional purchase alert on load if there are expiring promotions
+  useEffect(() => {
+    if (expiringPromotions.length > 0) {
+      setShowPromoAlert(true);
+    }
+  }, [expiringPromotions.length]); // Only trigger when the count changes
 
   // Account management handlers - memoized with useCallback
   const handleSelectAccount = useCallback((accountId: string) => {
@@ -274,6 +317,7 @@ function App() {
           recurringBillId: matchingBill.id,
           category: matchingBill.category, // Use recurring bill's category
         };
+        console.log(`Matched transaction "${txWithAccount.description}" with recurring bill "${matchingBill.description}"`);
 
         // Check if there's already a projected transaction for the next occurrence of this bill
         // Calculate what the next occurrence would be
@@ -325,8 +369,16 @@ function App() {
       // For pending transactions that have posted OR pending duplicates, we need to match by description + amount
       // This allows us to find the same transaction even if the date changed or it's being re-imported
       // Use fuzzy matching for description since USAA and other banks may update the description when posting
-      const existingPendingIndex = originalTransactions.findIndex(t => {
-        if (t.accountId !== activeAccountId || !t.isPending) return false;
+      const existingPendingIndex = updatedTransactions.findIndex(t => {
+        if (t.accountId !== activeAccountId) return false;
+
+        // Match if transaction is currently pending OR was recently cleared (within 14 days)
+        // This handles the case where a pending transaction clears and is re-imported with a different date
+        const isRecentlyCleared = !t.isPending && (
+          Math.abs((txWithAccount.date.getTime() - t.date.getTime()) / (1000 * 60 * 60 * 24)) <= 14
+        );
+
+        if (!t.isPending && !isRecentlyCleared) return false;
 
         // Amount must match closely
         if (Math.abs(t.amount - txWithAccount.amount) >= 0.01) return false;
@@ -344,27 +396,45 @@ function App() {
 
         // Special handling for USAA-style descriptions with pipe separator
         // Format: "MERCHANT NAME PHONE/DATE/ID | MERCHANT NAME PHONE/DATE/ID"
+        // When pending clears, format changes from "MERCHANT 101925" to "MERCHANT LOCATION PHONE/WEBSITE"
         if (existingDesc.includes('|') && newDesc.includes('|')) {
           const extractMerchantName = (desc: string) => {
             const firstPart = desc.split('|')[0].trim();
-            const merchantMatch = firstPart.match(/^([a-z\s]+)/);
-            return merchantMatch ? merchantMatch[1].trim() : firstPart;
+            // Extract first 2-3 words (merchant name) before numbers, dots, or extra info
+            // This handles both "GOODRX GOLD 101925" and "GOODRX GOLD GOODRX.COM CA"
+            const words = firstPart.split(/\s+/).filter(w => /^[a-z]+$/i.test(w));
+            return words.slice(0, 3).join(' ');
           };
 
           const existingMerchant = extractMerchantName(existingDesc);
           const newMerchant = extractMerchantName(newDesc);
 
-          if (existingMerchant.length >= 3 && newMerchant.length >= 3 && existingMerchant === newMerchant) {
-            return true;
+          // Match if merchant names share at least 2 words
+          if (existingMerchant.length >= 3 && newMerchant.length >= 3) {
+            const existingMerchantWords = new Set(existingMerchant.split(/\s+/));
+            const newMerchantWords = new Set(newMerchant.split(/\s+/));
+            const commonMerchantWords = [...existingMerchantWords].filter(w => newMerchantWords.has(w)).length;
+            if (commonMerchantWords >= 2) {
+              return true;
+            }
           }
         }
 
-        // Check if descriptions share at least 70% of words (for minor variations)
-        const existingWords = new Set(existingDesc.split(/\s+/));
-        const newWords = new Set(newDesc.split(/\s+/));
+        // Check if descriptions share significant words (filter out numbers, special chars, short words)
+        const cleanAndSplit = (desc: string) => {
+          return desc
+            .split(/\s+/)
+            .map(w => w.replace(/[^a-z0-9]/g, '')) // Remove special characters
+            .filter(w => w.length >= 3 && !/^\d+$/.test(w)); // Only keep words 3+ chars, exclude pure numbers
+        };
+
+        const existingWords = new Set(cleanAndSplit(existingDesc));
+        const newWords = new Set(cleanAndSplit(newDesc));
         const commonWords = [...existingWords].filter(w => newWords.has(w)).length;
+
+        // Match if they share at least 50% of significant words OR at least 3 words in common
         const totalWords = Math.max(existingWords.size, newWords.size);
-        if (totalWords > 0 && commonWords / totalWords >= 0.7) return true;
+        if (totalWords > 0 && (commonWords / totalWords >= 0.5 || commonWords >= 3)) return true;
 
         return false;
       });
@@ -438,17 +508,23 @@ function App() {
       let existingIndex = -1;
       let isPendingToPosted = false;
       let isPendingDuplicate = false;
+      let isClearedUpdate = false;
 
       if (existingByIdIndex !== -1) {
         existingIndex = existingByIdIndex;
       } else if (existingPendingIndex !== -1) {
         existingIndex = existingPendingIndex;
-        if (!txWithAccount.isPending) {
+        const existing = updatedTransactions[existingPendingIndex];
+
+        if (existing.isPending && !txWithAccount.isPending) {
           // Pending transaction is now posted
           isPendingToPosted = true;
-        } else {
+        } else if (existing.isPending && txWithAccount.isPending) {
           // Both are pending - this is a duplicate import of the same pending transaction
           isPendingDuplicate = true;
+        } else if (!existing.isPending && !txWithAccount.isPending) {
+          // Both are cleared - this is an update to a recently cleared transaction (date may have changed)
+          isClearedUpdate = true;
         }
       } else if (existingByDataIndex !== -1) {
         existingIndex = existingByDataIndex;
@@ -472,6 +548,16 @@ function App() {
             isPending: false, // Explicitly mark as not pending
           };
           postedCount++;
+          console.log(`Updated pending transaction to posted: ${existing.description} -> ${txWithAccount.description}, Category: ${existing.category} -> ${txWithAccount.category}`);
+        } else if (isClearedUpdate) {
+          // Recently cleared transaction being re-imported (date may have changed after clearing)
+          updatedTransactions[existingIndex] = {
+            ...txWithAccount, // Use all new data from CSV (may have updated date/description)
+            isReconciled: existing.isReconciled, // Preserve reconciled status
+            isPending: false, // Explicitly mark as not pending
+          };
+          updatedCount++;
+          console.log(`Updated recently cleared transaction: ${existing.description} (${existing.date.toLocaleDateString()}) -> ${txWithAccount.description} (${txWithAccount.date.toLocaleDateString()})`);
         } else if (isPendingDuplicate) {
           // Pending transaction re-imported - update with new data (may have better category/recurringBillId)
           updatedTransactions[existingIndex] = {
@@ -482,6 +568,7 @@ function App() {
             category: txWithAccount.recurringBillId ? txWithAccount.category : existing.category, // Use bill category if matched
           };
           updatedCount++;
+          console.log(`Updated pending transaction with better data: ${existing.description}, Category: ${existing.category} -> ${txWithAccount.category}`);
         } else if (existing.isManual) {
           // If existing was manual (user created from projected or added manually), update it
           updatedTransactions[existingIndex] = {
@@ -514,6 +601,7 @@ function App() {
           if (projectedIndex !== -1) {
             // Replace projected transaction with real one
             updatedTransactions[projectedIndex] = txWithAccount;
+            console.log(`Replaced projected transaction with real transaction: "${txWithAccount.description}"`);
             newCount++;
           } else {
             // No projected transaction found, just add the new one
@@ -631,6 +719,11 @@ function App() {
         }
       }
 
+      // Update promotional purchases if extracted from PDF (Synchrony only)
+      if (data.promotionalPurchases) {
+        updatedAccount.promotionalPurchases = data.promotionalPurchases;
+      }
+
       handleUpdateAccount(updatedAccount);
     }
 
@@ -717,14 +810,16 @@ function App() {
       const pendingUpdate = pendingBillUpdates.find(u => u.billId === bill.id);
       if (!pendingUpdate) return bill;
 
-      const updatedBill = { ...bill };
+      let updatedBill = { ...bill };
 
       if (approval.updateDate) {
         updatedBill.nextDueDate = pendingUpdate.proposedNextDueDate;
+        console.log(`Updated recurring bill "${bill.description}" nextDueDate: ${bill.nextDueDate} → ${pendingUpdate.proposedNextDueDate.toLocaleDateString()}`);
       }
 
       if (approval.updateAmount) {
         updatedBill.amount = pendingUpdate.importedAmount;
+        console.log(`Updated recurring bill "${bill.description}" amount: $${bill.amount.toFixed(2)} → $${pendingUpdate.importedAmount.toFixed(2)}`);
       }
 
       return updatedBill;
@@ -781,17 +876,20 @@ function App() {
     }
 
     setIsSyncing(true);
+    const syncTime = new Date();
     const success = await saveToICloud(iCloudDirHandle, {
       transactions,
       accounts,
       activeAccountId,
       recurringBills,
       debts,
-      lastModified: new Date().toISOString(),
+      lastModified: syncTime.toISOString(),
     });
     setIsSyncing(false);
 
     if (success) {
+      setLastSyncTime(syncTime);
+      saveLastSyncTime(syncTime);
       alert('Data synced to iCloud Drive successfully!');
     }
   };
@@ -1013,14 +1111,39 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      {/* Sticky Header - Reduced by ~30% */}
-      <div className="sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 pt-3 pb-2">
+      {/* Sticky Header - Collapsible */}
+      <div className={`sticky top-0 z-50 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 transition-all duration-300 ${
+        isHeaderCollapsed ? 'pt-2 pb-1' : 'pt-3 pb-2'
+      }`}>
         <div className="max-w-7xl mx-auto px-3">
-          <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl p-4 border border-gray-700">
+          <div className={`bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-xl border border-gray-700 transition-all duration-300 ${
+            isHeaderCollapsed ? 'p-2' : 'p-4'
+          }`}>
+            {/* Collapse/Expand Toggle Button */}
+            <button
+              onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+              className="absolute top-2 right-2 z-10 bg-gray-700 hover:bg-gray-600 text-white rounded-lg p-2 transition-colors"
+              title={isHeaderCollapsed ? 'Expand Header' : 'Collapse Header'}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {isHeaderCollapsed ? (
+                  // Expand icon (chevron down)
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                ) : (
+                  // Collapse icon (chevron up)
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                )}
+              </svg>
+            </button>
+
             {/* 3-Column Flex Header Layout */}
-            <div className="mb-3 flex flex-nowrap items-start gap-2">
-              {/* Left Column: Logo (fixed size, top-left aligned) */}
-              <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-start">
+            <div className={`flex flex-nowrap items-start gap-2 transition-all duration-300 ${
+              isHeaderCollapsed ? 'mb-0' : 'mb-3'
+            }`}>
+              {/* Left Column: Logo (responsive size) */}
+              <div className={`flex-shrink-0 flex items-start justify-start transition-all duration-300 ${
+                isHeaderCollapsed ? 'w-[60px] h-[60px]' : 'w-[145px] h-[145px]'
+              }`}>
                 <img
                   src={logo}
                   alt={`${APP_OWNER}'s Finance Tracker`}
@@ -1029,10 +1152,34 @@ function App() {
                 />
               </div>
 
-              {/* Center Column: Account tiles (2 rows, centered, flexible) */}
+              {/* Center Column: Account tiles or dropdown */}
               <div className="flex-1 flex flex-col items-center justify-center min-w-0 overflow-hidden">
-                {/* Checking/Savings Accounts Row */}
-                <div className="flex flex-wrap items-center justify-center gap-2 mb-2">
+                {isHeaderCollapsed ? (
+                  /* Collapsed Mode: Dropdown selector */
+                  <div className="w-full max-w-md">
+                    <select
+                      value={activeAccountId}
+                      onChange={(e) => handleSelectAccount(e.target.value)}
+                      className="w-full bg-gray-700 text-white rounded-lg px-3 py-2 text-sm border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    >
+                      {accounts.map(acc => {
+                        const accTransactions = transactions.filter(t => t.accountId === acc.id);
+                        const accBalance = accTransactions.length > 0
+                          ? calculateBalances(accTransactions, acc.availableBalance || 0)[accTransactions.length - 1]?.balance
+                          : acc.availableBalance || 0;
+                        return (
+                          <option key={acc.id} value={acc.id}>
+                            {acc.name} - {acc.institution} (${accBalance.toFixed(2)})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : (
+                  /* Full Mode: Account tiles */
+                  <>
+                    {/* Checking/Savings Accounts Row */}
+                    <div className="flex flex-wrap items-center justify-center gap-2 mb-2">
                 {accounts
                   .filter(acc => acc.accountType !== 'credit_card')
                   .map(acc => {
@@ -1110,10 +1257,13 @@ function App() {
                   );
                 })}
               </div>
-            </div>
+                  </>
+                )}
+              </div>
 
-            {/* Right Column: Summary Tile (fixed size, top-right aligned) */}
-            <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-end">
+            {/* Right Column: Summary Tile (hide in collapsed mode) */}
+            {!isHeaderCollapsed && (
+              <div className="flex-shrink-0 w-[145px] h-[145px] flex items-start justify-end">
               <div className="bg-gray-700/50 rounded-lg px-3 py-3 border border-gray-600 w-full h-full flex flex-col justify-center">
                 <div className="space-y-3">
                   <div className="text-center">
@@ -1154,6 +1304,7 @@ function App() {
                 </div>
               </div>
             </div>
+            )}
           </div>
 
           {/* Snapshot Layout - Hidden by default, shown for screenshot */}
@@ -1436,7 +1587,8 @@ function App() {
                             } else {
                               data = await parseCSV(file, account?.accountType);
                             }
-                            handleImportComplete(data, undefined, undefined, statementData);
+                            // Pass the extracted account balance and statement data if available
+                            handleImportComplete(data, data.accountBalance, undefined, statementData);
                           } catch (error) {
                             console.error('Error parsing file:', error);
                             alert(`Failed to parse ${isPDF ? 'PDF' : 'CSV'} file. Please check the format.`);
@@ -1481,24 +1633,7 @@ function App() {
                               return;
                             }
 
-                            interface ImportedTransaction {
-                              id?: string;
-                              date: string;
-                              description?: string;
-                              desc?: string;
-                              merchant?: string;
-                              category?: string;
-                              cat?: string;
-                              amount?: number | string;
-                              amt?: number | string;
-                              isPending?: boolean;
-                              pending?: boolean;
-                              isReconciled?: boolean;
-                              reconciled?: boolean;
-                              cleared?: boolean;
-                            }
-
-                            const importedTransactions = transactions.map((tx: ImportedTransaction, index: number) => {
+                            const importedTransactions = transactions.map((tx: any, index: number) => {
                               if (!tx.date) throw new Error(`Transaction ${index + 1}: Missing date`);
                               if (!tx.description && !tx.desc && !tx.merchant) throw new Error(`Transaction ${index + 1}: Missing description`);
                               if (tx.amount === undefined && tx.amt === undefined) throw new Error(`Transaction ${index + 1}: Missing amount`);
@@ -1598,12 +1733,19 @@ function App() {
                   </button>
                 </div>
                 {iCloudFolderPath && (
-                  <p className="text-blue-400 text-xs flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
-                    </svg>
-                    iCloud: {iCloudFolderPath}
-                  </p>
+                  <div className="text-blue-400 text-xs space-y-0.5">
+                    <p className="flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+                      </svg>
+                      iCloud: {iCloudFolderPath}
+                    </p>
+                    {lastSyncTime && (
+                      <p className="text-gray-500 pl-4">
+                        Last sync: {lastSyncTime.toLocaleDateString()} at {lastSyncTime.toLocaleTimeString()}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1731,6 +1873,14 @@ function App() {
                   <AppleCardInstallments transactions={accountTransactions} />
                 )}
 
+                {/* Synchrony Promotional Purchases Section */}
+                {account?.institution?.toLowerCase().includes('synchrony') &&
+                 account?.accountType === 'credit_card' &&
+                 account?.promotionalPurchases &&
+                 account.promotionalPurchases.length > 0 && (
+                  <PromotionalPurchases purchases={account.promotionalPurchases} />
+                )}
+
               </div>
             )}
 
@@ -1738,6 +1888,8 @@ function App() {
             {currentTab === 'register' && (
               <TransactionRegister
                 transactions={allTransactions}
+                allTransactions={transactions}
+                accounts={accounts}
                 onAddTransaction={handleAddTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
                 onDeleteMultipleTransactions={handleDeleteMultipleTransactions}
@@ -1840,6 +1992,14 @@ function App() {
           updates={pendingBillUpdates}
           onConfirm={handleConfirmBillUpdates}
           onCancel={handleCancelBillUpdates}
+        />
+      )}
+
+      {/* Promotional Purchase Expiration Alert */}
+      {showPromoAlert && expiringPromotions.length > 0 && (
+        <PromotionalPurchaseAlert
+          expiringPromotions={expiringPromotions}
+          onClose={() => setShowPromoAlert(false)}
         />
       )}
 

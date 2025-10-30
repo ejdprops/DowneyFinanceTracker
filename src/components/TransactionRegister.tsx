@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import type { Transaction, RecurringBill } from '../types';
+import type { Transaction, RecurringBill, Account } from '../types';
 import { parseDate, formatDateForInput } from '../utils/dateUtils';
+import { TransactionLinkModal } from './TransactionLinkModal';
 
 interface TransactionRegisterProps {
   transactions: Transaction[];
+  allTransactions?: Transaction[]; // All transactions across all accounts for linking
+  accounts?: Account[]; // All accounts for linking between accounts
   onAddTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   onDeleteTransaction: (id: string) => void;
   onDeleteMultipleTransactions: (ids: string[]) => void;
@@ -17,6 +20,8 @@ interface TransactionRegisterProps {
 
 export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   transactions,
+  allTransactions,
+  accounts,
   onAddTransaction,
   onDeleteTransaction,
   onDeleteMultipleTransactions,
@@ -30,6 +35,7 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [linkingTransaction, setLinkingTransaction] = useState<Transaction | null>(null);
   const [editingField, setEditingField] = useState<{id: string; field: 'date' | 'description' | 'category' | 'amount'} | null>(null);
   const [editValue, setEditValue] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'description' | 'category' | 'amount'>('date');
@@ -228,6 +234,53 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
         isPending: true,
       });
     }
+  };
+
+  const handleLinkTransaction = (linkedTransactionId: string) => {
+    if (!linkingTransaction) return;
+
+    // Update both transactions to link to each other
+    onUpdateTransaction({
+      ...linkingTransaction,
+      linkedTransactionId,
+    });
+
+    // Find and update the linked transaction
+    const linkedTx = allTransactions?.find(t => t.id === linkedTransactionId);
+    if (linkedTx) {
+      onUpdateTransaction({
+        ...linkedTx,
+        linkedTransactionId: linkingTransaction.id,
+      });
+    }
+
+    setLinkingTransaction(null);
+  };
+
+  const handleCreateAndLinkTransaction = (targetAccountId: string) => {
+    if (!linkingTransaction) return;
+
+    // Create a new transaction in the target account with opposite amount
+    const newTransactionId = `link-${Date.now()}`;
+    onAddTransaction({
+      accountId: targetAccountId,
+      date: linkingTransaction.date,
+      description: linkingTransaction.description,
+      category: linkingTransaction.category,
+      amount: -linkingTransaction.amount, // Opposite sign (payment out becomes payment in)
+      balance: 0,
+      isPending: true, // Mark as pending since it hasn't posted yet
+      isManual: true,
+      linkedTransactionId: linkingTransaction.id,
+    });
+
+    // Update the original transaction to link to the new one
+    onUpdateTransaction({
+      ...linkingTransaction,
+      linkedTransactionId: newTransactionId,
+    });
+
+    setLinkingTransaction(null);
   };
 
   const handleToggleSelection = (id: string) => {
@@ -685,6 +738,15 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
                               Make Recurring
                             </button>
                           )}
+                          {accounts && accounts.length > 1 && allTransactions && (
+                            <button
+                              onClick={() => setLinkingTransaction(transaction)}
+                              className="px-3 py-1 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors font-medium text-xs"
+                              title="Link to transaction in another account"
+                            >
+                              Link
+                            </button>
+                          )}
                           <button
                             onClick={() => {
                               if (confirm(`Are you sure you want to permanently remove this transaction?\n\n${transaction.description}\n${transaction.amount < 0 ? '-' : ''}$${Math.abs(transaction.amount).toFixed(2)}\n\nThis action cannot be undone.`)) {
@@ -727,6 +789,18 @@ export const TransactionRegister: React.FC<TransactionRegisterProps> = ({
             setSelectedTransaction(null);
           }}
           onCancel={() => setSelectedTransaction(null)}
+        />
+      )}
+
+      {/* Transaction Link Modal */}
+      {linkingTransaction && accounts && allTransactions && (
+        <TransactionLinkModal
+          transaction={linkingTransaction}
+          allTransactions={allTransactions}
+          accounts={accounts}
+          onLink={handleLinkTransaction}
+          onCreateAndLink={handleCreateAndLinkTransaction}
+          onClose={() => setLinkingTransaction(null)}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import type { Transaction, ParsedCSVData } from '../types';
+import type { Transaction, ParsedCSVData, PromotionalPurchase } from '../types';
 
 // Set up PDF.js worker - use the bundled worker from node_modules
 // Vite will handle copying this to the dist folder
@@ -17,7 +17,7 @@ export interface StatementData {
 interface BankFormat {
   name: string;
   detect: (text: string) => boolean;
-  parse: (text: string) => Transaction[];
+  parse: (text: string) => Transaction[] | { transactions: Transaction[]; balance?: number; promotionalPurchases?: PromotionalPurchase[] };
   extractStatementData?: (text: string) => StatementData;
 }
 
@@ -349,6 +349,7 @@ const parseBankOfAmericaStatement = (text: string): Transaction[] => {
 };
 
 /**
+<<<<<<< HEAD
  * Extract Apple Card statement data
  */
 const extractAppleCardStatementData = (text: string): StatementData => {
@@ -924,6 +925,12 @@ const extractGenericStatementData = (text: string): StatementData => {
  */
 const bankFormats: BankFormat[] = [
   {
+    name: 'Synchrony Bank',
+    detect: (text) => text.toLowerCase().includes('synchrony bank') ||
+                      text.toLowerCase().includes('synchrony.com'),
+    parse: parseSynchronyStatement,
+  },
+  {
     name: 'Apple Card',
     detect: (text) => text.toLowerCase().includes('apple card') ||
                       text.toLowerCase().includes('goldman sachs') ||
@@ -986,9 +993,27 @@ export const parseBankStatementPDF = async (file: File): Promise<ParsedPDFData> 
 
     let transactions: Transaction[];
     let statementData: StatementData | undefined;
+    let accountBalance: number | undefined;
+    let promotionalPurchases: PromotionalPurchase[] | undefined;
 
     if (detectedFormat) {
-      transactions = detectedFormat.parse(text);
+      console.log(`Detected bank format: ${detectedFormat.name}`);
+      const result = detectedFormat.parse(text);
+
+      // Handle parsers that return balance info and promotional purchases
+      if (typeof result === 'object' && 'transactions' in result) {
+        transactions = result.transactions;
+        accountBalance = result.balance;
+        promotionalPurchases = result.promotionalPurchases;
+        if (accountBalance) {
+          console.log(`Extracted account balance: $${accountBalance.toFixed(2)}`);
+        }
+        if (promotionalPurchases) {
+          console.log(`Extracted ${promotionalPurchases.length} promotional purchases`);
+        }
+      } else {
+        transactions = result;
+      }
 
       // Chase credit card PDFs have inverted signs - fix them
       // In Chase PDFs: positive = charges, negative = payments
@@ -1024,7 +1049,7 @@ export const parseBankStatementPDF = async (file: File): Promise<ParsedPDFData> 
       errors.push('No transactions found in PDF. The format may not be supported.');
     }
 
-    return { transactions, errors, statementData };
+    return { transactions, errors, accountBalance, promotionalPurchases, statementData };
   } catch (error) {
     return {
       transactions: [],

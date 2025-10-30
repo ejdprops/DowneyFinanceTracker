@@ -127,6 +127,7 @@ The app automatically detects and parses multiple bank formats:
 ### PDF Formats
 
 Supported PDF bank statements:
+- **Synchrony Bank** - Parses Synchrony Bank credit card statements (Sleep Number, CareCredit, etc.)
 - **Apple Card** - Detects Goldman Sachs/Apple Card statements
 - **USAA** - Parses USAA bank statements
 - **Chase** - Parses Chase bank statements
