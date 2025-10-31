@@ -374,11 +374,20 @@ function App() {
 
         // Match if transaction is currently pending OR was recently cleared (within 14 days)
         // This handles the case where a pending transaction clears and is re-imported with a different date
-        const isRecentlyCleared = !t.isPending && (
+        const isRecentlyCleared = !t.isPending && !txWithAccount.isPending && (
           Math.abs((txWithAccount.date.getTime() - t.date.getTime()) / (1000 * 60 * 60 * 24)) <= 14
         );
 
+        // Only match if existing transaction is pending OR it's a recently cleared update scenario
+        // Don't match two non-pending transactions from the same batch import
         if (!t.isPending && !isRecentlyCleared) return false;
+
+        // If both are cleared (not pending) and from the same date, this is likely a duplicate
+        // in the same import batch, not an update scenario - skip this match
+        if (!t.isPending && !txWithAccount.isPending &&
+            t.date.toDateString() === txWithAccount.date.toDateString()) {
+          return false;
+        }
 
         // Amount must match closely
         if (Math.abs(t.amount - txWithAccount.amount) >= 0.01) return false;
