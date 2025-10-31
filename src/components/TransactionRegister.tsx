@@ -825,8 +825,12 @@ const AddTransactionForm: React.FC<AddTransactionFormProps> = ({ onAdd, onCancel
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Parse date in local timezone to avoid UTC conversion issues
+    const [year, month, day] = formData.date.split('-').map(Number);
+    const localDate = new Date(year, month - 1, day);
+
     onAdd({
-      date: new Date(formData.date),
+      date: localDate,
       description: formData.description,
       category: formData.category,
       amount: parseFloat(formData.amount),
