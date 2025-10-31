@@ -35,10 +35,10 @@ export function MobileAccountHeader({ account, currentBalance }: MobileAccountHe
           </p>
           <p className={`text-lg font-bold ${
             isCreditCard
-              ? (currentBalance < 0 ? 'text-red-400' : 'text-green-400')
+              ? (currentBalance > 0 ? 'text-red-400' : 'text-green-400')
               : (currentBalance >= 0 ? 'text-green-400' : 'text-red-400')
           }`}>
-            ${Math.abs(currentBalance).toLocaleString(undefined, {
+            {isCreditCard && currentBalance > 0 ? '-' : ''}${Math.abs(currentBalance).toLocaleString(undefined, {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
             })}
