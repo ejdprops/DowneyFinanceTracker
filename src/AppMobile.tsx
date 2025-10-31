@@ -43,7 +43,7 @@ declare const __APP_OWNER__: string;
 // Build timestamp and app owner - injected at build time
 const BUILD_DATE = __BUILD_DATE__;
 const APP_OWNER = __APP_OWNER__;
-const VERSION = '1.10.0';
+const VERSION = '1.12.1'; // Fixed credit card display on mobile
 
 type TabType = 'account' | 'register' | 'recurring' | 'projections' | 'charts' | 'merchants' | 'debts' | 'sync';
 
