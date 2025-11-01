@@ -302,9 +302,10 @@ export function MobileSummary({
               const balance = getAccountBalance(account.id);
               const availableCredit = getAvailableCredit(account);
               // Display balance owed as negative (red) since it's debt
-              // Positive balance = you owe money (display as negative red)
-              // Negative balance = you have a credit (display as positive green)
-              const displayBalance = -balance;
+              // Negative balance = you owe money (display as negative red)
+              // Positive balance = you have a credit (display as positive green)
+              // Credit card balances are stored as negative when owed
+              const displayBalance = balance;
 
               return (
                 <button

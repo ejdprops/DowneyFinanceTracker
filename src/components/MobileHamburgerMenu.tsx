@@ -192,11 +192,11 @@ export function MobileHamburgerMenu({
                           <p className="text-xs text-gray-400 mt-0.5">{acc.institution}</p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-sm font-semibold ${accBalance > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                            {accBalance > 0 ? '-' : ''}${Math.abs(accBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <p className={`text-sm font-semibold ${accBalance < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                            {accBalance < 0 ? '-' : ''}${Math.abs(accBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                           <p className="text-xs text-gray-500">
-                            {accBalance > 0 ? 'owed' : 'credit'}
+                            {accBalance < 0 ? 'owed' : 'credit'}
                           </p>
                         </div>
                       </button>
